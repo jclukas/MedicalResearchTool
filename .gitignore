@@ -1,0 +1,3 @@
+#ignore pycache and DS store files
+*/__pycache__/*
+*/.DS_Store
