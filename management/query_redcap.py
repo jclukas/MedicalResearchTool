@@ -3,8 +3,8 @@
 
 from getopt import getopt
 import csv, os, re, sys
-sys.path.append("{0}/Desktop/cbmi/reproduce/python/tools/objects".format(os.environ['HOME']))
-sys.path.append("{0}/Desktop/cbmi/reproduce/python/tools".format(os.environ['HOME']))
+sys.path.append("{0}/Desktop/cbmi/reproduce/python/MedicalResearchTool/objects".format(os.environ['HOME']))
+sys.path.append("{0}/Desktop/cbmi/reproduce/python/MedicalResearchTool".format(os.environ['HOME']))
 
 import pycurl, hashlib, json, nltk
 import requests
