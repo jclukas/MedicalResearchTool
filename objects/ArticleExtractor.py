@@ -2,62 +2,105 @@
 # -*- coding: utf-8 -*-
 
 import os, sys, re
+sys.path.append("{0}/Desktop/cbmi/reproduce/python/MedicalResearchTool/objects".format(os.environ['HOME']))
+sys.path.append("{0}/Desktop/cbmi/reproduce/python/MedicalResearchTool".format(os.environ['HOME']))
+
 import nltk
 import requests, html
 import xmltodict
 from pprint import pprint
 from stemming.porter2 import stem
 from ArticleManager import ArticleManager
+from Query import Query
 
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape, unescape
 from bs4 import BeautifulSoup
-import time
 
 class ArticleExtractor(ArticleManager):
+	"""
+	Depends on:
+
+	Functions from inherited from ArticleManager:
+		get_choices
+		check
+		ask
+	See ArticleManager for additional documentation
+
+
+
+	"""
+
+	def __init__(self,metadata=Query().get_metadata()):
+		super(ArticleExtractor,self).__init__(metadata=metadata)
 
 	def clean_entry(self):
+		"""
+		For fields in ArticleExtractor.entry attribute with multiple entries, remove duplicates and format the final input
+		Runs on ArticleExtractor.entry attribute
+		Return: ArticleExtractor.entry attribute
+		Article.entry must be type: dictionary
+
+		Example:
+		>>> ae = ArticleExtractor()
+		...
+		>>> ae.entry
+		{
+			'article_doi':'10.1016/j.arth.2015.12.012',
+			'analysis_sw':'SAS,SPSS,SAS',
+			'grant_ids':'#29861982,     #EI98239',
+			'primary_research':1
+		}
+		>>> clean_entry()
+		{
+			'article_doi':'10.1016/j.arth.2015.12.012',
+			'analysis_sw':'SAS, SPSS',
+			'grant_ids':'#29861982, #EI98239',
+			'primary_research':1
+		}
+
+		Raise TypeError when entry is not a dictionary
+		>>> print(ae.entry)
+		['a', 'b']
+		>>> ae.clean_entry()
+		TypeError: clean_entry called on: ['a', 'b'] 
+		invalid type: <class 'list'>
+		"""
+		if (type(self.entry) is not dict):
+			raise TypeError("clean_entry called on: {0} \ninvalid type: {1}".format(self.entry,type(self.entry)))
+			return self.entry
 		for (k,v) in self.entry.items():
 			copy = v
 			try:
 				val = copy.split(',')
+				val = list(map(str.strip, val))
 				val = set(val)
 				val = ', '.join(val)
 				self.entry[k] = val
 			except AttributeError:
-				#wrong type
+				#copy.split(',') failed because val was not a string
+				#v was already clean
 				pass
+		return self.entry
 
-
-	def xml_load(self,site):
+	def get_reviewer(self) -> 'void':
 		"""
-		xml_text = requests.get(site).text
-		beaut = BeautifulSoup(xml_text,"xml")
-		print("\n\n\n\n")
-		print(beaut)
-		print(beaut.permissions)
-		conti = input()
+		Get the name of the person reviewing the article
+		Use computer's username to take a guess, or ask for input if cant determine a guess
+		Return: Void
 
-		return beaut
+		Example:
+		>>> ae = ArticleExtractor()
+		>>> ae.get_reviewer()
+		I think 'Whos reviewing the article?' should be 'Elvis' based on: 'user of computer'
+		Is this correct? (if no, type no and press enter; otherwise, press enter):
 
-
-
-		xml_text = requests.get(site).text
-		root = ET.fromstring(xml_text)
-		xml = xmltodict.parse(xml_text)
-		return root
-
+		>>> ae.get_reviewer()
+		Whos reviewing the article?:
+		#TODO, finish
 		"""
-		xml_text = requests.get(site).text
-		xml_text = re.sub(r'&lt;',"<",xml_text)
-		xml_text = re.sub(r'&gt;',">",xml_text)
-		#unescape(requests.get(site).text,{"&lt;":"<", "&gt;":">"})		<--- alternate to above regex
 
-		data = xmltodict.parse(xml_text)
-		return data
-
-	def get_reviewer(self):
-		username = os.getlogin() or pwd.getpwuid(os.getuid())[0]
+		username = os.getlogin() or pwd.getpwuid(os.getuid())[0]	#username of the person using the computer
 		users = self.get_choices("reviewer")
 		for user in users:
 			if (re.search(username,user,re.I)):
@@ -65,16 +108,52 @@ class ArticleExtractor(ArticleManager):
 				return
 		self.ask("Whos reviewing the article?","reviewer")	
 
-	def get_name_ent(self,sent):
-		words = nltk.word_tokenize(sent)
-		tagged = nltk.pos_tag(words)
-		#tagged = nltk.pos_tag([word.rstrip(''.join([str(i) for i in range(10)])) for word in words])
-		chunkGram = r"Chunk: {<NNP.?><NNP.?|NN.?|,|\(|\)|:|IN|CC|DT>*<NNP.?|\)>}"
-		chunkedParser = nltk.RegexpParser(chunkGram)
-		chunked = chunkedParser.parse(tagged)
-		return chunked
+	def chunker(self,sentence : 'string or bytes object') -> 'nltk.tree.Tree object':
+		"""
+		Chunk a sentence
+		Args: sentence	(string)
+		Return: nltk.tree.Tree object, traversable,
+			chunks begin with and end with proper noun (singular or plural)
+			and these may occur between the two proper nouns:
+				proper noun, noun, ',', '(', ')', ':', demonstrative adjective, conjuction, preposition
+		For more information, see:
+			http://www.nltk.org/book/ch07.html
 
-	def get_clinical_domain(self,key_words):
+		Example:
+		>>> ae = ArticleExtractor()
+		>>> ae.chunker("The Institute for American Greatness has partnered with The University of Iceland")
+		Tree('S', [('The', 'DT'), \
+		Tree('Chunk', [('Institute', 'NNP'), ('for', 'IN'), ('American', 'NNP'), ('Greatness', 'NNP')]), \
+		('has', 'VBZ'), ('partnered', 'VBN'), ('with', 'IN'), ('The', 'DT'), \
+		Tree('Chunk', [('University', 'NNP'), ('of', 'IN'), ('Iceland', 'NNP')]) \
+		])
+
+		Except TypeError when sentence is not a string, retry by casting sentence to string
+		>>> ae.chunker(12)
+		chunker called on: '1'
+		1 is type <class 'int'> but must be a string or bytes-like object
+		retrying with cast to string
+		Tree('S', [('12', 'CD')])
+		"""
+		try:
+			words = nltk.word_tokenize(sentence)
+			tagged = nltk.pos_tag(words)
+			#tagged = nltk.pos_tag([word.rstrip(''.join([str(i) for i in range(10)])) for word in words])
+			chunkGram = r"Chunk: {<NNP.?><NNP.?|NN.?|,|\(|\)|:|IN|CC|DT>*<NNP.?|\)>}"
+			chunkedParser = nltk.RegexpParser(chunkGram)
+			chunked = chunkedParser.parse(tagged)
+			return chunked
+		except TypeError as e:
+			print("chunker called on: '{}' \n{} is type: {} but must be a string or bytes-like object".format(sentence,sentence,type(sentence)))
+			print("retrying with cast to string")
+			return self.chunker(str(sentence))
+			
+
+	def get_clinical_domain(self,key_words : 'words to search against the clinical domain choices') -> 'redcap key for given domain':
+		#TODO, depends on redcap
+		"""
+		Get the clinical domain of the article
+		"""
 		if ('clinical_domain' in self.entry):
 			return
 		stopwords = nltk.corpus.stopwords.words('english') + ['health','disease','medicine','medical','sciences','medicine','international']
@@ -123,7 +202,7 @@ class ArticleExtractor(ArticleManager):
 				if ("inclusion_and_exclusion_stated" not in self.entry):
 					self.check_boolean("Inclusion Exclusion Criteria Stated",1,"yes",each_sent,"inclusion_and_exclusion_stated")
 				if ("inclusion_and_exclusion_stated" in self.entry):
-					self.entry['inclusion_exclu_location'] = 3 #TODO, enter as list??
+					self.entry['inclusion_exclu_location___3'] = 1
 					self.check_ontol(each_sent)
 					return
 
@@ -171,18 +250,22 @@ class ArticleExtractor(ArticleManager):
 		
 		for each_sent in nltk.sent_tokenize(text):
 			if (re.search(r'database',each_sent,re.I)):		#re.search(r'electronic.*?records',each_sent,re.I) or 
-				tree = self.get_name_ent(each_sent)
+				tree = self.chunker(each_sent)
 				sts = []
-				for st in tree.subtrees(lambda tree: tree.height() == 3):
-					for st2 in st.subtrees(lambda tree: tree.height() == 2):
-						sts.append([str(tup[0]) for tup in st2.leaves()])
-				if (len(sts) > 0):
-					self.check("Database Name",' '.join(longest(sts)),' '.join(longest(sts)),each_sent,"db_citation_1")		#TODO, it there's more than one
-				if ('db_citation_1' in self.entry):
-					self.entry['state_data_sources'] = 1
-					self.entry['state_database_where'] = 4		#TODO, list
-					self.ask("Do they cite the database?","database_cited")		#TODO, what does it mean to site a database?
-					return
+				try:
+					for st in tree.subtrees(lambda tree: tree.height() == 3):
+						for st2 in st.subtrees(lambda tree: tree.height() == 2):
+							sts.append([str(tup[0]) for tup in st2.leaves()])
+					if (len(sts) > 0):
+						self.check("Database Name",' '.join(longest(sts)),' '.join(longest(sts)),each_sent,"db_citation_1")		#TODO, it there's more than one
+					if ('db_citation_1' in self.entry):
+						self.entry['state_data_sources'] = 1
+						self.entry['state_database_where___4'] = 1
+						self.ask("Do they cite the database?","database_cited")		#TODO, what does it mean to site a database?
+						return
+				except AttributeError as e:
+					#chunker run on invalid data type, didnt return a tree
+					pass
 		self.entry['state_data_sources'] = 0
 
 	def _get_query(self,text):
@@ -194,7 +277,7 @@ class ArticleExtractor(ArticleManager):
 					(re.search('records',each_sent,re.I) and re.search('review',each_sent,re.I))):
 				self.check_boolean("Query Method Stated",1,"yes",each_sent,"query_method_stated")
 			if ('query_method_stated' in self.entry):
-				self.entry['query_method_location'] = 4			#TODO
+				self.entry['query_method_location___4'] = 1
 				return
 		self.entry['query_method_stated'] = 0
 
@@ -254,7 +337,7 @@ class ArticleExtractor(ArticleManager):
 					self.check("Analysis Software Version",search.group(1),search.group(1),each_sent,"analysis_sw_version")
 				self.check_operating_system(each_sent)
 				return
-		self.entry['software_analysis_code'] = 2	
+		self.entry['software_analysis_code'] = 0	
 		
 	def check_standards(self,text):
 		stands = ["STATA","SAS","SPSS"]
@@ -263,7 +346,7 @@ class ArticleExtractor(ArticleManager):
 				if re.search(stand,each_sent):
 					self.check("Analysis Software",stand,stand,each_sent,"analysis_sw")
 					if ("analysis_sw" in self.entry and stand in self.entry['analysis_sw']):
-						self.entry['analysis_software_open'] = 1		#TODO, how to enter in redcap
+						self.entry['analysis_software_open___1'] = 1		#TODO, how to enter in redcap
 						search = re.search(stand + r'.*?(\d[\d\.]*\d)',each_sent)
 						if (search):
 							self.check("Analysis Software Version",search.group(1),search.group(1),each_sent,"analysis_sw_version")
@@ -274,7 +357,7 @@ class ArticleExtractor(ArticleManager):
 					search = re.search(r'\sR\s.*?(\d[\d\.]*\d)',each_sent)
 					if (search):
 						self.check("Analysis Software Version",search.group(1),search.group(1),each_sent,"analysis_sw_version")
-					self.entry['analysis_software_open'] = 2
+					self.entry['analysis_software_open___2'] = 1
 					search = re.search(r'\sR\s.*?(\d[\d\.]*\d)',each_sent)
 					self.ask_without_choices("Does the publication list the operating system used in analyses?","Type the operating system used: ","analysis_os")
 
@@ -289,8 +372,8 @@ class ArticleExtractor(ArticleManager):
 	def _get_limitations(self,text):
 		for each_sent in nltk.sent_tokenize(text):
 			if (re.search(r'shortcomings',each_sent,re.I) or re.search(r'limitation',each_sent,re.I) or re.search(r'(was)?(is)? limited',each_sent,re.I)):
-				self.check_boolean("Publication Documents Limitations Of The Study",7,"yes",each_sent,"limitations_where")
-				if ("limitations_where" in self.entry):
+				self.check_boolean("Publication Documents Limitations Of The Study",1,"yes",each_sent,"limitations_where___7")
+				if ("limitations_where___7" in self.entry):
 					return
 
 	def _get_primary_research(self,text):
@@ -301,99 +384,20 @@ class ArticleExtractor(ArticleManager):
 		return
 		#TODO, run machine learning algorithm on text
 
-
-	def xml_extract(self):
-		
-		doi = journalName = firstName = lastName = email = articleTitle = ""
-
-		journalName = self.try_xml(self.xml,['PubmedArticle','MedlineCitation','Article','Journal','Title'])
-		date = self.try_xml(self.xml,['PubmedArticle','MedlineCitation','Article','ArticleDate'])
-		#print self.xml['PubmedArticle']['MedlineCitation']['Article']
-		day = self.try_xml(date,['Day'])
-		month = self.try_xml(date,['Month'])
-		year = self.try_xml(date,['Year'])
-		publisher = self.try_xml(self.xml,['PubmedArticle','MedlineCitation','Article','Abstract','CopyrightInformation'])
-
-		EIDs = self.try_xml(self.xml,['PubmedArticle','MedlineCitation','Article','ELocationID'])
-		try:
-			if EIDs["@EIdType"] == "doi":
-				doi = EIDs['#text']
-		except TypeError:
-			for EID in EIDs:
-				if EID["@EIdType"] == "doi":
-					doi = EID['#text']
-
-		article = self.try_xml(self.xml,['PubmedArticle','MedlineCitation','Article'])
-		articleTitle = self.try_xml(article,['ArticleTitle'])
-
-		if (isinstance(self.try_xml(article,['AuthorList','Author']),list)):
-			firstAuthor = self.try_xml(article,['AuthorList','Author'])[0]
-		else:
-			firstAuthor = self.try_xml(article,['AuthorList','Author'])
-		lastName = self.try_xml(firstAuthor,['LastName'])
-		firstName = self.try_xml(firstAuthor,['ForeName'])
-		institution = self.try_xml(firstAuthor,['AffiliationInfo','Affiliation'])
-		if ('@' in institution):
-			search = re.search(r'\s((\w|\.)+@.+)',institution);
-			email = search.group(1);
-			if ('Electronic address:' in institution):
-				search = re.search(r'(.*) Electronic address:',institution)
-				institution = search.group(1);
-			else:
-				search = re.search(r'(.*)\s.+@',institution)
-				institution = search.group(1);
-		else:
-			email = ""
-		self.institution = institution
-
-		if (month and day and year):
-			self.entry = {
-				'article_doi':doi,
-				'journal_publication':journalName,
-				'publication_date':"{0}-{1}-{2}".format(month,day,year),
-				'author_fn':firstName,
-				'author_ln':lastName,
-				'author_email':email,
-				'article_title':articleTitle,
-			}
-		else:
-			self.entry = {
-				'article_doi':doi,
-				'journal_publication':journalName,
-				'author_fn':firstName,
-				'author_ln':lastName,
-				'author_email':email,
-				'article_title':articleTitle,
-			}
-
-	def try_xml(self,xml,layers):
-		data = xml
-		try:
-			while layers and data:
-				layer = layers.pop(0)
-				data = data[layer]
-			return data
-		except KeyError as e:
-			#print(e)
-			return ""
-		except TypeError as e:
-			#print(e)
-			return self.try_xml(data,[0] + [layer] + layers)
-
-	def _get_institution(self):
-		af_from_xml = self.institution.split(", ")
+	def _get_institution(self,institution):
+		af_from_xml = institution.split(", ")
 
 		for option in af_from_xml:		#could tweak slightly
 			if (re.search(r'hospital',option,re.I) or re.search(r'university',option,re.I) or re.search(r'school',option,re.I) or re.search(r'college',option,re.I) or re.search(r'institute',option,re.I)):
-				self.check("Institution",option,option,self.institution,"institution_corr_author")
+				self.check("Institution",option,option,institution,"institution_corr_author")
 			if ("institution_corr_author" in self.entry):
 				return
 		try:
-			self.check("Institution",af_from_xml[1],af_from_xml[1],self.institution,"institution_corr_author")
+			self.check("Institution",af_from_xml[1],af_from_xml[1],institution,"institution_corr_author")
 		except IndexError:
 			pass
 
-	def get_clinical_domain_from_xml(self):
+	def get_clinical_domain_from_xml(self,institution):
 		#TODO, chooser doesnt have scrollbar
 			#option is to switch check to check_boolean if run out of time
 
@@ -408,22 +412,22 @@ class ArticleExtractor(ArticleManager):
 					division = search.group(1).strip()
 			return (department,division)
 
-		af_from_xml = self.institution.split(", ")
+		af_from_xml = institution.split(", ")
 		(department, division) = _clinical_asides(af_from_xml)
 
 		cd_from_department = self.get_clinical_domain(department.split())
 		if (cd_from_department):
-			self.check("Clinical Domain",self.get_choices("clinical_domain")[cd_from_department],cd_from_department,"Department: {0}".format(department),"clinical_domain")
+			self.check_boolean("Clinical Domain",self.get_choices("clinical_domain")[cd_from_department],cd_from_department,"Department: {0}".format(department),"clinical_domain")
 
 		cd_from_division = self.get_clinical_domain(division.split())
 		if (cd_from_division):
-			self.check("Clinical Domain",self.get_choices("clinical_domain")[cd_from_division],cd_from_division,"Division: {0}".format(division),"clinical_domain")
+			self.check_boolean("Clinical Domain",self.get_choices("clinical_domain")[cd_from_division],cd_from_division,"Division: {0}".format(division),"clinical_domain")
 
 
 		cd_from_journal = self.get_clinical_domain(self.entry['journal_publication'].split())
 		if (cd_from_journal):
-			self.check("Clinical Domain",self.get_choices("clinical_domain")[cd_from_journal],cd_from_journal,"Journal Title: " + self.entry['journal_publication'],"clinical_domain")
+			self.check_boolean("Clinical Domain",self.get_choices("clinical_domain")[cd_from_journal],cd_from_journal,"Journal Title: " + self.entry['journal_publication'],"clinical_domain")
 
 		cd_from_title = self.get_clinical_domain(self.entry['article_title'].split())
 		if (cd_from_title):
-			self.check("Clinical Domain",self.get_choices("clinical_domain")[cd_from_title],cd_from_title,"Article Title: " + self.entry['article_title'],"clinical_domain")
+			self.check_boolean("Clinical Domain",self.get_choices("clinical_domain")[cd_from_title],cd_from_title,"Article Title: " + self.entry['article_title'],"clinical_domain")
