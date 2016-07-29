@@ -3,13 +3,10 @@
 
 import requests
 from ArticleExtractor import ArticleExtractor
+from XMLExtractor import XMLExtractor
 from bs4 import BeautifulSoup
 import re,sys
 import textract, nltk
-
-ncbi_site = "https://www.ncbi.nlm.nih.gov/"
-xml_tag = "?report=xml&format=text"
-pmc_tag = "utils/oa/oa.fcgi?id="
 
 text = "filler"
 
@@ -53,16 +50,18 @@ class RawArticle(ArticleExtractor):
 		return text.decode()
 		#self.sents = re.split(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s',text)
 
-class PMCArticle(ArticleExtractor):
+class PMCArticle(ArticleExtractor,XMLExtractor):
 
+	#TODO, fix here and others so that metadata has default if none provided
 	def __init__(self,pubmed,run_style,metadata):
 		self.pubmed_code = pubmed
 		self.indi = run_style
-		self.metadata = metadata
 		self.entry = {}
 		#self.extra = {}
-		self.xml = self.xml_load("{0}pubmed/{1}{2}".format(ncbi_site,pubmed,xml_tag))['pre']
-		self.fulltext = self.load_text().text
+		super(PMCArticle,self).__init__(metadata)		#TODO, change elsewhere if this works
+
+		#self.fulltext = self.load_text().text 			#for pmc using online xml
+		self.fulltext = pubmed 			#change to 'text' or something similar if stick with xml format
 		self.bs = BeautifulSoup(self.fulltext,"lxml")
 
 	def load_text(self):
@@ -79,10 +78,10 @@ class PMCArticle(ArticleExtractor):
 
 	def section(self,sections,tag):
 		tags = self.bs.find_all(tag)
-		for h2 in tags:
+		for tag in tags:
 			for section in sections:
-				if (re.search(section,h2.get_text(),re.I)):
-					sect = re.sub(r'title','',h2.get('id'))
+				if (re.search(section,tag.get_text(),re.I)):
+					sect = re.sub(r'title','',tag.get('id'))
 		try:
 			return self.bs.div(id=sect)[0]
 		except UnboundLocalError as e:
@@ -91,7 +90,7 @@ class PMCArticle(ArticleExtractor):
 
 	def search(self,regex):
 		try:
-			return self.bs.find_all(string=regex)[0].parent.parent
+			return self.bs.find(text=regex).parent.parent
 		except IndexError:
 			#regex search returned no results
 			return self.bs
@@ -99,10 +98,21 @@ class PMCArticle(ArticleExtractor):
 			#match occurred at top level of tree
 			return self.bs
 
+	def xml_section(self,*titles):
+		body = self.bs.body
+		for title in titles:
+			if (body.find("sec",{"sec-type":title})):
+				return body.find("sec",{"sec-type":title}).text
+			if (body.find("title",text=title)):
+				return body.find("title",text=re.compile(title,re.I)).parent.text
+		return body.text		#unable to find section
 
 
-	"""
+
+
+	
 	def download_pdf(self):
+		"""
 		if (not os.path.isdir("articles/")):
 			os.makedirs("articles/")
 
@@ -123,7 +133,8 @@ class PMCArticle(ArticleExtractor):
 
 		bashCommand = "mv " + href.split('/')[-1] + " " + self.pubmed_code + ".pdf"
 		subprocess.run(bashCommand.split())
-	"""
+		"""
+		return
 
 	
 	def get_clinical_domain_from_pdf(self):
@@ -135,6 +146,7 @@ class PMCArticle(ArticleExtractor):
 			pass
 
 	def get_hypotheses(self):
+		return self._get_hypotheses(self.xml_section('background','introduction'))
 		return self._get_hypotheses(self.section(["background","introduction"],"h2").get_text())
 
 	def get_funding(self):		#nltk could improve; low priority now though
@@ -142,6 +154,7 @@ class PMCArticle(ArticleExtractor):
 		return self._get_funding(self.search(re.compile(r'funded.*?by',re.I)).get_text())
 
 	def get_inex_criteria(self):	#TODO, expand
+		return self._get_inex_criteria(self.xml_section('methods'))
 		return self._get_inex_criteria(self.section(["methods"],"h2").get_text())
 
 	def get_ontol_vocab(self): #TODO, if ontol occurs outside of inclusion / exclusion
@@ -149,6 +162,7 @@ class PMCArticle(ArticleExtractor):
 		return self._get_ontol_vocab(text)
 
 	def get_databases(self):
+		return self._get_databases(self.xml_section('methods'))
 		return self._get_databases(self.section(["methods"],"h2").get_text())
 
 	def get_query(self):
@@ -157,6 +171,7 @@ class PMCArticle(ArticleExtractor):
 		self.entry['query_script_shared'] = 0
 
 	def get_nlp(self):
+		return self._get_nlp(self.xml_section('methods'))
 		return self._get_nlp(self.section(["methods"],"h2").get_text())
 
 	def get_analysis(self):
@@ -168,6 +183,7 @@ class PMCArticle(ArticleExtractor):
 		return self._get_stats(text)
 
 	def get_limitations(self):
+		return self._get_limitations(self.xml_section('discussion','conclusion'))
 		return #TODO
 		return self._get_limiations(text)
 
@@ -181,9 +197,9 @@ class PMCArticle(ArticleExtractor):
 		return self._get_clear_analysis(text)
 		#TODO, run machine learning algorithm on text
 
-	def get_institution(self):
+	def get_institution(self,institution):
 		return #TODO
-		return self._get_institution()
+		return self._get_institution(institution)
 
 class ClosedArticle(ArticleExtractor):
 
@@ -193,7 +209,6 @@ class ClosedArticle(ArticleExtractor):
 		self.metadata = metadata
 		self.entry = {}
 		self.extra = {}
-		self.xml = self.xml_load("{0}pubmed/{1}{2}".format(ncbi_site,pubmed,xml_tag))['pre']
 		self.text = RawArticle(pubmed).get_text()
 	
 	def get_clinical_domain_from_pdf(self):
@@ -248,8 +263,8 @@ class ClosedArticle(ArticleExtractor):
 		return self._get_clear_analysis(self.text)
 		#TODO, run machine learning algorithm on text
 
-	def get_institution(self):
-		return self._get_institution()
+	def get_institution(self,institution):
+		return self._get_institution(institution)
 
 	
 	
