@@ -2,19 +2,27 @@
 # -*- coding: utf-8 -*-
 
 import sys, os
-sys.path.append("{0}/Desktop/cbmi/reproduce/python/tools/objects".format(os.environ['HOME']))
-sys.path.append("{0}/Desktop/cbmi/reproduce/python/tools".format(os.environ['HOME']))
+sys.path.append("{0}/Desktop/cbmi/reproduce/python/MedicalResearchTool/objects".format(os.environ['HOME']))
+sys.path.append("{0}/Desktop/cbmi/reproduce/python/MedicalResearchTool".format(os.environ['HOME']))
 
 from getopt import getopt
 from Article import PMCArticle, ClosedArticle
+from ArticleManager import ArticleManager
 from Trainer import Trainer
 import nltk
 from Query import Query
 from pprint import pprint
 from ArticleExtractor import ArticleExtractor
+from XMLExtractor import XMLExtractor
 
 import re, requests
 import subprocess
+
+from bs4 import BeautifulSoup
+
+ncbi_site = "https://www.ncbi.nlm.nih.gov/"
+xml_tag = "?report=xml&format=text"
+pmc_tag = "utils/oa/oa.fcgi?id="
 
 def get_command_args(argv):
 	firstarticles = ["24433938","26513432","23632207","25266841","25203000","26236002","24119466",
@@ -23,18 +31,24 @@ def get_command_args(argv):
 	secondarticles = ["26775158","26815253","26825406","26824374","26803428","26795617","26784271","26783357","26783356","26781389"]
 	pmcarticles = ['23632207','25266841','24119466','21700714','25883689','24934411','25368396','26775158','26803428','26784271']
 	pmcs = ['PMC3852715','PMC4527599','PMC4254085','PMC3137948','PMC4384267','PMC4070347','PMC4221799','PMC4715304','PMC4747833','PMC4742403']
+	xmltests = ['23449283','24672566','22733976','25565678','24228257','24107106','23355463','24433938']
+	#24433938 is from firstarticles, doesnt exist in xml
+	#23355463 is not open acces
+	#for debugging
 
-	articles = secondarticles
-	#articles = pmcarticles
-	#excluded: "26824581"
+	articles = firstarticles #+ secondarticles
+	#articles = xmltests
 
-	indi = xml = pdf = redcap = down = train = 0
-	opts, args = getopt(argv,"a:dixprt",["articles=","download","independent","xml","pdf","redcap","train"])
+	identifier = "pmid"
+	indi = xml = pdf = redcap = down = train = zxml = 0
+	opts, args = getopt(argv,"a:bdi:xprtz",["articles=","by-itself","download","identifier=","xml","pdf","redcap","train","zxml"])
 	for opt,arg in opts:
 		if opt in ("-a","--articles"):
 			articles = arg.split(',')
-		elif opt in ("-i","--independent"):
+		elif opt in ("-b","--by-itself"):
 			indi = 1
+		elif opt in ("-i","--identifier"):
+			identifier = arg
 		elif opt in ("-x","--xml"):
 			xml = 1
 		elif opt in ("-p","--pdf"):
@@ -45,13 +59,17 @@ def get_command_args(argv):
 			down = 1
 		elif opt in ("-t","--train"):
 			train = 1
+		elif opt in ("-z","--zxml"):
+			zxml = 1
 	return ({
 		'indi':indi,
+		'ident':identifier,
 		'xml':xml,
 		'pdf':pdf,
 		'redcap':redcap,
 		'down':down,
-		'train':train
+		'train':train,
+		'zxml':zxml
 		}, articles)
 
 def side_project(article):
@@ -88,13 +106,23 @@ def main(argv):
 
 		#primary_research = Trainer("primary_research",articles)
 
-		#algs.append(qu.get_mldata("reproducibilityresearch_yn"))
-		searchwords = ['statistical','analysis','standard','deviation','sd','chi-squared','test','significance','t-test','regression','model','data','intercepts']
+		searchwords = ['statistical','analysis','standard','deviation','sd','chi-squared','test','significance','t-test','Poisson',
+						'regression','model','data','intercepts','hazard','odds','ratio','Cox','normally','distributed','multivariate']
 		analysis_processes_clear = Trainer("analysis_processes_clear",articles,searchwords)
 
+		return
 
 	for each_article in articles:
 		print(each_article)
+
+	
+		if (opts['zxml']):
+			try:
+				art = PMCArticle(ArticleManager().read_xml('articles/sub_pmc_result.xml',opts['ident'],each_article),opts['indi'],metadata)
+			except TypeError as e:
+				#article not found or not open access
+				print("{} not found".format(each_article))
+				continue
 
 		############side projects#################
 		#xml = ArticleExtractor().xml_load("https://www.ncbi.nlm.nih.gov/pmc/oai/oai.cgi?verb=GetRecord&identifier=oai:pubmedcentral.nih.gov:{0}&metadataPrefix=pmc".format(re.sub(r'pmc','',each_article)))
@@ -125,9 +153,12 @@ def main(argv):
 		#art = PMCArticle(each_article,opts['indi'],metadata)
 
 		if (opts['xml']):
-			art.xml_extract()
-			art.get_institution()
-			art.get_clinical_domain_from_xml()
+			xe = XMLExtractor()
+			xml = xe.xml_load("{0}pubmed/{1}{2}".format(ncbi_site,each_article,xml_tag))['pre']
+			art.entry.update(xe.xml_extract(xml))
+
+			art.get_institution(xe.institution)
+			art.get_clinical_domain_from_xml(xe.institution)
 
 		if (opts['down']):
 			art.download_pdf()
@@ -135,11 +166,19 @@ def main(argv):
 		if (opts['pdf']):
 
 			art.get_reviewer()
-			art.get_clinical_domain_from_pdf()
+			
+			#art.get_clinical_domain_from_pdf()
+			## ^^ maybe works, not sure ?
+			## doesnt find anything though so should probably tweak / *remove
+
 			art.get_hypotheses()
 			art.get_funding()
+
 			art.get_inex_criteria()
+			##redcap problems :( this is the worst
 			art.get_ontol_vocab()
+			## ^^ TODO
+
 			art.get_databases()
 			art.get_query()		#TODO
 			art.get_nlp()
@@ -151,11 +190,12 @@ def main(argv):
 			art.get_limitations()
 		
 		#TODO, user friendly version of data
-		art.clean_entry()
+		art.entry = art.clean_entry()
 		pprint(art.entry)
 		
 		if (opts['redcap']):
-			art.enter_redcap(art.entry)
+			art.enter_redcap(art.entry,14)
+			print(str(art.redcap_return))
 
 		print("\n\n\n\n")
 
