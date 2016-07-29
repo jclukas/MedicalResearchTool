@@ -22,7 +22,7 @@ class Trainer(object):
 		print("training")
 		pubmed = json.loads(open("pubmed.json").read())
 		ml_data = Query().get_ml_data(redcap)
-		pprint(ml_data)
+		#pprint(ml_data)		#print records and their corresponding ml values (0 or 1)
 		train = []
 		featuresset = []
 
@@ -35,13 +35,16 @@ class Trainer(object):
 			except KeyError:
 				print("couldnt find article with record_id: {0}".format(each_article))
 
-		for i in range(10):
+		acc = []
+		for i in range(1000):
 			random.shuffle(featuresset)
 			trainset = featuresset[:-7]
 			testset = featuresset[-7:]
 			classifier = nltk.NaiveBayesClassifier.train(trainset)
-			print(nltk.classify.accuracy(classifier,testset))
-			classifier.show_most_informative_features(10)
+			acc.append(nltk.classify.accuracy(classifier,testset))
+			#classifier.show_most_informative_features(10)
+
+		print(sum(acc)/len(acc))
 
 
 		
