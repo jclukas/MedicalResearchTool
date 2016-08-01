@@ -166,16 +166,10 @@ def main(argv):
 		if (opts['pdf']):
 
 			art.get_reviewer()
-			
-			#art.get_clinical_domain_from_pdf()
-			## ^^ maybe works, not sure ?
-			## doesnt find anything though so should probably tweak / *remove
-
 			art.get_hypotheses()
 			art.get_funding()
 
 			art.get_inex_criteria()
-			##redcap problems :( this is the worst
 			art.get_ontol_vocab()
 			## ^^ TODO
 
@@ -189,7 +183,6 @@ def main(argv):
 
 			art.get_limitations()
 		
-		#TODO, user friendly version of data
 		art.entry = art.clean_entry()
 		pprint(art.entry)
 		
