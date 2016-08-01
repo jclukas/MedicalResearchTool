@@ -154,11 +154,16 @@ def main(argv):
 
 		if (opts['xml']):
 			xe = XMLExtractor()
-			xml = xe.xml_load("{0}pubmed/{1}{2}".format(ncbi_site,each_article,xml_tag))['pre']
+			xml = xe.xml_load("{0}pubmed/{1}{2}".format(ncbi_site,each_article,xml_tag))
 			art.entry.update(xe.xml_extract(xml))
 
-			art.get_institution(xe.institution)
-			art.get_clinical_domain_from_xml(xe.institution)
+			try:
+				art.get_institution(xe.institution)
+				art.get_clinical_domain_from_xml(xe.institution)
+			except AttributeError as e:
+				#'XMLExtractor' object has no attribute 'institution'
+				#xml extract failed during http request or parsing, user already notified
+				pass
 
 		if (opts['down']):
 			art.download_pdf()

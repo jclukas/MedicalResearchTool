@@ -2,58 +2,42 @@
 # -*- coding: utf-8 -*-
 
 import os, sys, re
-sys.path.append("{0}/Desktop/cbmi/reproduce/python/MedicalResearchTool/objects".format(os.environ['HOME']))
-sys.path.append("{0}/Desktop/cbmi/reproduce/python/MedicalResearchTool".format(os.environ['HOME']))
-
-import requests, xmltodict, bs4
+import requests
+from bs4 import BeautifulSoup
 
 class XMLExtractor(object):
 	"""
+	Load xml from ncbi site,
+	Parse xml using BeautifulSoup
+	Extract data using BeautifulSoup
+
 	Depends on imported modules:
 		requests		-- http://docs.python-requests.org/en/master/
-		xmltodict 		-- https://github.com/martinblech/xmltodict
+		beautiful soup	-- https://www.crummy.com/software/BeautifulSoup/bs4/doc/
 	See documentation for more information
 	"""
 
-	def xml_load(self,site : 'string - url where xml data lives') -> 'collections.OrderedDict':
-		"""
-		xml_text = requests.get(site).text
-		beaut = BeautifulSoup(xml_text,"xml")
-		print("\n\n\n\n")
-		print(beaut)
-		print(beaut.permissions)
-		conti = input()
-
-		return beaut
-
-
-
-		xml_text = requests.get(site).text
-		root = ET.fromstring(xml_text)
-		xml = xmltodict.parse(xml_text)
-		return root
-
-		"""
+	def xml_load(self,site : 'string - url where xml data lives') -> 'bs4.BeautifulSoup':
 		"""
 		Get xml data on an article
 		Args: url address (string)
-		Return: ordered dictionary of xml data
+		Return: BeautifulSoup of xml data
 				0 to indicate an error occurred
 
 		Example:
 		>>> xe = XMLExtractor()
 		>>> xe.xml_load("http://www.ncbi.nlm.nih.gov/pubmed/24433938?report=xml&format=text")
-		OrderedDict([('pre',
-              OrderedDict([('PubmedArticle',
-                            OrderedDict([('MedlineCitation',
-                                          OrderedDict([('@Owner', 'NLM'),
-                                                       ('@Status', 'MEDLINE'),
-                                                       ('PMID',
-                                                        OrderedDict([('@Version',
-                                                                      '1'),
-                                                                     ('#text',
-                                                                      '24433938')])),
-                                                                      ...
+		<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+		<html><body><pre>
+		<pubmedarticle>
+		    <medlinecitation owner="NLM" status="MEDLINE">
+		        <pmid version="1">24433938</pmid>
+		        <datecreated>
+		            <year>2014</year>
+		            <month>06</month>
+		            <day>14</day>
+		        </datecreated>
+		        ...
 
 		Requests manages error handling
 		>>> xe.xml_load("this is not a valid url")
@@ -66,7 +50,6 @@ class XMLExtractor(object):
 			xml_text = requests.get(site).text
 			xml_text = re.sub(r'&lt;',"<",xml_text)
 			xml_text = re.sub(r'&gt;',">",xml_text)
-			#unescape(requests.get(site).text,{"&lt;":"<", "&gt;":">"})		<--- alternate to above regex
 			data = self.parse_xml(xml_text)
 			if (not data):
 				print("xml could not be interpretted for site: {}".format(site))
@@ -75,94 +58,97 @@ class XMLExtractor(object):
 		except Exception as e:
 			print("request to site: '{}'\nfailed. error information from requests:".format(site))
 			print("\t",e)
+			raise
 			return 0
 
-	def parse_xml(self,xml : 'string - xml formatted string') -> 'collections.OrderedDict':
+	def parse_xml(self,xml : 'string - xml formatted string') -> 'bs4.BeautifulSoup':
 		"""
 		Parse an xml string
 		Args: string to be parsed
-		Return: ordered dictionary of xml data
+		Return: BeautifulSoup of xml data
 				0 to indicate an error occurred
 
 		Example:
 		>>> xe = XMLExtractor()
-		>>> xml = xe.parse_xml("<ImportantInformation><BestDinosaur>triceratops</BestDinosaur><BestCountry>Ireland</BestCountry></ImportantInformation>")
-		>>> xml
-		OrderedDict([('ImportantInformation',
-		              OrderedDict([('BestDinosaur', 'triceratops'),
-		                           ('BestCountry', 'Ireland')]))])
-		>>> xml['ImportantInformation']
-		OrderedDict([('BestDinosaur', 'triceratops'), ('BestCountry', 'Ireland')])
-		>>> xml['ImportantInformation']['BestDinosaur']
+		>>> bs = xe.parse_xml("<ImportantInformation><BestDinosaur>triceratops</BestDinosaur><BestCountry>Ireland</BestCountry></ImportantInformation>",'lxml')
+		>>> bs
+		<html><body><importantinformation><bestdinosaur>triceratops</bestdinosaur><bestcountry>Ireland</bestcountry></importantinformation></body></html>
+		>>> bs.importantinformation
+		<importantinformation><bestdinosaur>triceratops</bestdinosaur><bestcountry>Ireland</bestcountry></importantinformation>
+		>>> bs.bestdinosaur
+		<bestdinosaur>triceratops</bestdinosaur>
+		>>> bs.bestdinosaur.text
 		triceratops
 
-		xmltodict manages error handling
-		>>> xe.parse_xml(<tag 1>"The Soviet Onion"</tag 1>)
-		xml parse failed on line:
-		<tag 1>The Soviet Onion</tag 1>
-		error information from requests: 
-			not well-formed (invalid token): line 1, column 5
+		>>> xe.parse_xml(12)
+		parse_xml called on: '12'
+		invalid type, arg must be type string but is: <class 'int'>
+
+		In theory, BeautifulSoup manages error handling... but I cant get it to throw an error so it's a still a mystery
 		"""
+		if (type(xml) is not str):
+			print("parse_xml called on: '{}'\n invalid type, arg must be type string but is: {}".format(xml,type(xml)))
+			return 0
 		try:
-			data = xmltodict.parse(xml)
+			data = BeautifulSoup(xml,'lxml')
 		except Exception as e:
-			search = re.search(r'line (\d+), column (\d+)',e.args[0])
-			print("xml parse failed on line:\n{}".format(xml.split('\n')[int(search.group(1))-1]))
-			print("error information from requests: \n\t{}".format(e))
+			print("xml parse failed\nerror information from BeautifulSoup: \n\t{}".format(e))
 			return 0
 		return data
 
-	def xml_extract(self,xml : 'dictionary - xml data from ncbi site') -> 'dictionary':
+	def xml_extract(self,bs : 'BeautifulSoup - xml data from ncbi site') -> 'dictionary':
 		"""
-		Extract redcap fields from the xml dictionary
-		Args: xml data (dictionary)
+		Extract redcap fields from the BeautifulSoup object
+		Args: BeautifulSoup of xml from ncbi site
 		Return: dictionary of redcap data
 				empty dictionary if errors occur
+
+		Example:
+		>>> xe = XMLExtractor()
+		>>> bs = xe.xml_load("http://www.ncbi.nlm.nih.gov/pubmed/24433938?report=xml&format=text)
+		>>> xe.xml_extract(bs)
+		{'article_doi': '10.1016/j.burns.2013.12.002',
+		 'article_title': 'Differences between intentional and non-intentional burns '
+		                  'in India: implications for prevention.',
+		 'author_email': 'mnatarajan@jjay.cuny.edu.',
+		 'author_fn': 'Mangai',
+		 'author_ln': 'Natarajan',
+		 'journal_publication': 'Burns : journal of the International Society for Burn '
+		                        'Injuries',
+		 'publication_date': '2014-06-14'}
+
+		>>> xe.xml_extract(0)
+		{}
+		>>> xe.xml_extract("oh no, green slime!")
+		xml_extract called on invalid argument: 'oh no, green slime!'
+		type of arg is: <class 'str'> but should be a <class 'bs4.BeautifulSoup'>
+		{}
 		"""
 		
-		if (not xml):
+		if (not bs):
 			#likely, xml download failed because invalid url or misformatted data (user has already been notified in xml_load or parse_xml method calls)
 			#return empty dictionary so that redcap entry doesnt throw errors
 			return {}
-		if (type(xml) is not dict):
-			#verify xml is a dictionary
-			print("xml_extract called on invalid argument: '{}'\n type of arg is: {} but should be a dictionary".format(xml,type(xml)))
+		if (not isinstance(bs,type(BeautifulSoup("",'lxml')))):
+			#verify xml is a beautiful soup object
+			print("xml_extract called on invalid argument: '{}'\ntype of arg is: {} but should be a {}".format(bs,type(bs),type(BeautifulSoup("",'lxml'))))
 			#return empty dictionary so that redcap entry doesnt throw errors
 			return {}
 
-		#initialize fields to empty strings to prevent 'reference before instantiation errors'
-		doi = journalName = firstName = lastName = email = articleTitle = ""
-
-		journalName = self.try_xml(xml,['PubmedArticle','MedlineCitation','Article','Journal','Title'])
-		date = self.try_xml(xml,['PubmedArticle','MedlineCitation','Article','ArticleDate'])
-		day = self.try_xml(date,['Day'])
-		month = self.try_xml(date,['Month'])
-		year = self.try_xml(date,['Year'])
-		publisher = self.try_xml(xml,['PubmedArticle','MedlineCitation','Article','Abstract','CopyrightInformation'])
-
-		#EID may be list
-		EIDs = self.try_xml(xml,['PubmedArticle','MedlineCitation','Article','ELocationID'])
-		try:
-			if EIDs["@EIdType"] == "doi":
-				doi = EIDs['#text']
-		except TypeError:
-			for EID in EIDs:
-				if EID["@EIdType"] == "doi":
-					doi = EID['#text']
-
-		article = self.try_xml(xml,['PubmedArticle','MedlineCitation','Article'])
-		articleTitle = self.try_xml(article,['ArticleTitle'])
-
-		if (isinstance(self.try_xml(article,['AuthorList','Author']),list)):
-			firstAuthor = self.try_xml(article,['AuthorList','Author'])[0]
-		else:
-			firstAuthor = self.try_xml(article,['AuthorList','Author'])
+		#call try_xml on each field so that if any field isnt found, extraction skips that field and continues
+		journalName = self.try_xml(bs,'title')
+		day = self.try_xml(bs,'day')
+		month = self.try_xml(bs,'month')
+		year = self.try_xml(bs,'year')
+		publisher = self.try_xml(bs,'copyrightinformation')
+		doi = self.try_xml(bs,("elocationid",{"eidtype":"doi"}))
+		articleTitle = self.try_xml(bs,'articletitle')
 
 		#redcap only allows alpha characters for first and last name. sub out invalid characters
-		lastName = re.sub('[\W_\s]','',self.try_xml(firstAuthor,['LastName']))
-		firstName = re.sub('[\W_\s]','',self.try_xml(firstAuthor,['ForeName']))
+		lastName = re.sub('[\W_\s]','',self.try_xml(bs,"lastname"))
+		firstName = re.sub('[\W_\s]','',self.try_xml(bs,'forename'))
 
-		institution = self.try_xml(firstAuthor,['AffiliationInfo','Affiliation'])
+		institution = self.try_xml(bs,'affiliation')
 		if ('@' in institution):
 			search = re.search(r'\s((\w|\.)+@.+)',institution);
 			email = search.group(1);
@@ -175,38 +161,37 @@ class XMLExtractor(object):
 		else:
 			email = ""
 		self.institution = institution
+		#self.institution is used later in ArticleExtractor.get_institution and ArticleExtractor.get_clinical_domain_from_pdf method calls
+		#see executer or ArticleExtractor for more information
 
-		#of these fields, only publication_date has formatting restrictions
-		if (month and day and year):
-			return ({
-				'article_doi':doi,
-				'journal_publication':journalName,
-				'publication_date':"{0}-{1}-{2}".format(year,month,day),
-				'author_fn':firstName,
-				'author_ln':lastName,
-				'author_email':email,
-				'article_title':articleTitle,
-			})
-		else:
-			return ({
-				'article_doi':doi,
-				'journal_publication':journalName,
-				'author_fn':firstName,
-				'author_ln':lastName,
-				'author_email':email,
-				'article_title':articleTitle,
+		return ({
+			'article_doi':doi,
+			'journal_publication':journalName,
+			'publication_date':"{0}-{1}-{2}".format(year,month,day),
+			'author_fn':firstName,
+			'author_ln':lastName,
+			'author_email':email,
+			'article_title':articleTitle,
 			})
 
-	def try_xml(self,xml,layers):
-		data = xml
+	def try_xml(self, bs : 'BeautifulSoup data', search : 'string or tuple, argument in BeautifulSoup.find method call') -> 'string':
+		"""
+		Handle errors that occur when tags arent found in BeautifulSoup
+		Args: BeautifulSoup of xml from ncbi site
+				search information
+		Return: data in form of string
+				empty string if nothing found
+
+		Example:
+		>>> xe = XMLExtractor()
+		>>> bs = BeautifulSoup("<ImportantInformation><BestDinosaur>triceratops</BestDinosaur><BestCountry>Ireland</BestCountry></ImportantInformation>",'lxml')
+		>>> xe.try_xml(bs,'bestcountry')
+		'Ireland'
+		>>> xe.try_xml(bs,madonna)
+		''
+		"""
 		try:
-			while layers and data:
-				layer = layers.pop(0)
-				data = data[layer]
-			return data
-		except KeyError as e:
-			#print(e)
+			return bs.find(search).text
+		except AttributeError as e:
+			#field not found
 			return ""
-		except TypeError as e:
-			#print(e)
-			return self.try_xml(data,[0] + [layer] + layers)
