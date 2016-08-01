@@ -187,7 +187,10 @@ class ArticleManager(object):
 			return 1
 
 		print("I think '" + variable + "' should be: '" + display + "' based on:\n" + info)
-		if (self.ask_question("Is this wrong?")):
+
+		correct = input("Is this correct? (if no, type no and press enter; otherwise, press enter): ")
+		print("\n\n")
+		if re.search(r'no',correct,re.I):
 			print("\n\n")
 			return 0
 		else:
