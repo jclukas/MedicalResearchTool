@@ -26,9 +26,6 @@ class ArticleExtractor(ArticleManager):
 		check
 		ask
 	See ArticleManager for additional documentation
-
-
-
 	"""
 
 	def __init__(self,metadata=Query().get_metadata()):
@@ -108,7 +105,7 @@ class ArticleExtractor(ArticleManager):
 				return
 		self.ask("Whos reviewing the article?","reviewer")	
 
-	def chunker(self,sentence : 'string or bytes object') -> 'nltk.tree.Tree object':
+	def chunker(self,sentence : 'string or bytes object') -> 'nltk.tree.Tree':
 		"""
 		Chunk a sentence
 		Args: sentence	(string)
@@ -130,8 +127,8 @@ class ArticleExtractor(ArticleManager):
 
 		Except TypeError when sentence is not a string, retry by casting sentence to string
 		>>> ae.chunker(12)
-		chunker called on: '1'
-		1 is type <class 'int'> but must be a string or bytes-like object
+		chunker called on: '12'
+		12 is type <class 'int'> but must be a string or bytes-like object
 		retrying with cast to string
 		Tree('S', [('12', 'CD')])
 		"""
@@ -149,13 +146,25 @@ class ArticleExtractor(ArticleManager):
 			return self.chunker(str(sentence))
 			
 
-	def get_clinical_domain(self,key_words : 'words to search against the clinical domain choices') -> 'redcap key for given domain':
-		#TODO, depends on redcap
+	def get_clinical_domain(self,key_words : 'words to search against the clinical domain choices') -> 'int (redcap key)':
 		"""
 		Get the clinical domain of the article
+		Args: list of keywords
+		Return: int value corresponding to redcap key for given domain, or 0 if no keyword matches (unknown domain) or keywords is invalid type
+
+		Example:
+		>>> ae = ArticleExtractor()
+		>>> ae.get_clinical_domain(['Neurology'])
+		23
+		>>> ae.get_clinical_domain(['The American Dream'])
+		0
+		>>> ae.get_clinical_domain(12)
+		0
 		"""
 		if ('clinical_domain' in self.entry):
 			return
+		if (type(key_words) is not list):
+			return 0
 		stopwords = nltk.corpus.stopwords.words('english') + ['health','disease','medicine','medical','sciences','medicine','international']
 		key_words = [stem(word.lower().strip()) for word in key_words if word.lower() not in stopwords]
 		domains = self.get_choices("clinical_domain")
@@ -169,7 +178,7 @@ class ArticleExtractor(ArticleManager):
 					pass
 		return 0
 
-	def _get_hypotheses(self,text):
+	def _get_hypotheses(self,text : 'string'):
 		for each_sent in nltk.sent_tokenize(text):
 			if (re.search(r'we.*?hypothes',each_sent,re.I)):
 				self.check("Hypothesis Driven or Hypothesis Generating",1,"driven",each_sent,"hypothesis_gen_or_driv")
@@ -177,7 +186,7 @@ class ArticleExtractor(ArticleManager):
 					self.generate_chooser("Does the publication state null and alternative hypotheses?",each_sent,self.get_choices("clear_hypothesis"))
 					if (self.user_choice != -1):
 						self.entry['clear_hypothesis'] = self.user_choice
-					return
+					return self.entry['hypothesis_gen_or_driv']
 		self.entry['hypothesis_gen_or_driv'] = 2
 
 	#	**26784271 - weird format :(
@@ -247,7 +256,7 @@ class ArticleExtractor(ArticleManager):
 					max_list = each_list
 			return max_list
 
-		
+
 		for each_sent in nltk.sent_tokenize(text):
 			if (re.search(r'database',each_sent,re.I)):		#re.search(r'electronic.*?records',each_sent,re.I) or 
 				tree = self.chunker(each_sent)
