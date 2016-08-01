@@ -136,15 +136,6 @@ class PMCArticle(ArticleExtractor,XMLExtractor):
 		"""
 		return
 
-	
-	def get_clinical_domain_from_pdf(self):
-		try:
-			keywords = self.bs.find("span",{"class":"kwd-text"}).text.split(', ')
-			return self._get_clinical_domain(keywords)
-		except AttributeError:
-			#no keywords
-			pass
-
 	def get_hypotheses(self):
 		return self._get_hypotheses(self.xml_section('background','introduction'))
 		return self._get_hypotheses(self.section(["background","introduction"],"h2").get_text())
@@ -201,7 +192,7 @@ class PMCArticle(ArticleExtractor,XMLExtractor):
 		return #TODO
 		return self._get_institution(institution)
 
-class ClosedArticle(ArticleExtractor):
+class ClosedArticle(ArticleExtractor,XMLExtractor):
 
 	def __init__(self,pubmed,run_style,metadata):
 		self.pubmed_code = pubmed
