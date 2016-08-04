@@ -11,7 +11,7 @@ import xmltodict
 from pprint import pprint
 from stemming.porter2 import stem
 from ArticleManager import ArticleManager
-from Query import Query
+from Redcap import Redcap
 
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape, unescape
@@ -28,14 +28,17 @@ class ArticleExtractor(ArticleManager):
 	See ArticleManager for additional documentation
 	"""
 
-	def __init__(self,metadata=Query().get_metadata()):
-		super(ArticleExtractor,self).__init__(metadata=metadata)
+	def __init__(self,run_style=0,**metadata):
+		if ('metadata' in metadata):
+			super(ArticleExtractor,self).__init__(run_style=run_style,metadata=metadata['metadata'])
+		else:
+			super(ArticleExtractor,self).__init__(run_style=run_style)
 
 	def clean_entry(self):
 		"""
 		For fields in ArticleExtractor.entry attribute with multiple entries, remove duplicates and format the final input
 		Runs on ArticleExtractor.entry attribute
-		Return: ArticleExtractor.entry attribute
+		Return: ArticleExtractor.entry attribute (dictionary)
 		Article.entry must be type: dictionary
 
 		Example:
@@ -60,7 +63,7 @@ class ArticleExtractor(ArticleManager):
 		>>> print(ae.entry)
 		['a', 'b']
 		>>> ae.clean_entry()
-		TypeError: clean_entry called on: ['a', 'b'] 
+		TypeError: clean_entry called on: ['a', 'b']
 		invalid type: <class 'list'>
 		"""
 		if (type(self.entry) is not dict):
@@ -80,7 +83,7 @@ class ArticleExtractor(ArticleManager):
 				pass
 		return self.entry
 
-	def get_reviewer(self) -> 'void':
+	def get_reviewer(self):
 		"""
 		Get the name of the person reviewing the article
 		Use computer's username to take a guess, or ask for input if cant determine a guess
@@ -96,14 +99,13 @@ class ArticleExtractor(ArticleManager):
 		Whos reviewing the article?:
 		#TODO, finish
 		"""
-
 		username = os.getlogin() or pwd.getpwuid(os.getuid())[0]	#username of the person using the computer
 		users = self.get_choices("reviewer")
 		for user in users:
 			if (re.search(username,user,re.I)):
 				self.check("Whos reviewing the article?",users[user],user,"user of computer","reviewer")
 				return
-		self.ask("Whos reviewing the article?","reviewer")	
+		self.ask("Whos reviewing the article?","reviewer")
 
 	def chunker(self,sentence : 'string or bytes object') -> 'nltk.tree.Tree':
 		"""
@@ -144,7 +146,7 @@ class ArticleExtractor(ArticleManager):
 			print("chunker called on: '{}' \n{} is type: {} but must be a string or bytes-like object".format(sentence,sentence,type(sentence)))
 			print("retrying with cast to string")
 			return self.chunker(str(sentence))
-			
+
 
 	def get_clinical_domain(self,key_words : 'words to search against the clinical domain choices') -> 'int (redcap key)':
 		"""
@@ -170,15 +172,26 @@ class ArticleExtractor(ArticleManager):
 		domains = self.get_choices("clinical_domain")
 		for word in key_words:
 			for domain in domains:
-				try:
-					if (re.search(word,domain,re.I)):
-						return domain
-				except Exception as e:
-					#error in keyword
-					pass
+				if (re.search(word,domain,re.I)):
+					return domain
 		return 0
 
-	def _get_hypotheses(self,text : 'string'):
+	def _get_hypotheses(self,text : 'string') -> 'int (redcap key)':
+		"""
+		Determine whether the study in the article was 'Hypothesis Driven or Hypothesis Generating'
+			and if they stated the null and alternative hypotheses
+		Args: string to be extracted (text from the article)
+		Return: int value corresponding to redcap key for hypothesis type
+
+		Example:
+		>>> ae = ArticleExtractor()
+		>>> ae._get_hypotheses("We hypothesized that patients undergoing extended BEV therapy could have altered patterns of recurrence and symptoms of recurrence due to its novel mechanism of action")
+		1
+		#from article: 23632207.pdf (doi: 10.1016/j.ygyno.2013.04.055)
+		>>> ae._get_hypotheses("")
+		#TODO, finish
+
+		"""
 		for each_sent in nltk.sent_tokenize(text):
 			if (re.search(r'we.*?hypothes',each_sent,re.I)):
 				self.check("Hypothesis Driven or Hypothesis Generating",1,"driven",each_sent,"hypothesis_gen_or_driv")
@@ -188,9 +201,10 @@ class ArticleExtractor(ArticleManager):
 						self.entry['clear_hypothesis'] = self.user_choice
 					return self.entry['hypothesis_gen_or_driv']
 		self.entry['hypothesis_gen_or_driv'] = 2
+		return self.entry['hypothesis_gen_or_driv']
 
 	#	**26784271 - weird format :(
-	def _get_funding(self,text):		#nltk could improve; low priority now though
+	def _get_funding(self,text):
 		for each_sent in nltk.sent_tokenize(text):
 			if (re.search(r'funded.*?by',each_sent,re.I|re.S)): 	#TODO, or re.search(r'supported.*?by',each_sent,re.I|re.S)):
 				search = re.search(r"grant.*?(\w*\d[\w\d/-]*)",each_sent,re.I)
@@ -258,7 +272,7 @@ class ArticleExtractor(ArticleManager):
 
 
 		for each_sent in nltk.sent_tokenize(text):
-			if (re.search(r'database',each_sent,re.I)):		#re.search(r'electronic.*?records',each_sent,re.I) or 
+			if (re.search(r'database',each_sent,re.I)):		#re.search(r'electronic.*?records',each_sent,re.I) or
 				tree = self.chunker(each_sent)
 				sts = []
 				try:
@@ -280,9 +294,9 @@ class ArticleExtractor(ArticleManager):
 	def _get_query(self,text):
 		self.entry['query_script_shared'] = 0
 		for each_sent in nltk.sent_tokenize(text):		#TODO, how to tell??
-			if (re.search(r'abstracted',each_sent,re.I) or 
-					re.search(r'manual',each_sent,re.I) or 
-					re.search(r'query',each_sent,re.I) or 
+			if (re.search(r'abstracted',each_sent,re.I) or
+					re.search(r'manual',each_sent,re.I) or
+					re.search(r'query',each_sent,re.I) or
 					(re.search('records',each_sent,re.I) and re.search('review',each_sent,re.I))):
 				self.check_boolean("Query Method Stated",1,"yes",each_sent,"query_method_stated")
 			if ('query_method_stated' in self.entry):
@@ -295,7 +309,7 @@ class ArticleExtractor(ArticleManager):
 			if (re.search(r'language\spro',each_sent,re.I) or re.search(r'\snlp\s',each_sent,re.I)):
 				self.check_boolean("Research Involves Natural Language Processing",1,"yes",each_sent,"text_nlp_yn")
 				if ("text_nlp_yn" in self.entry):
-					if (self.ask_without_choices("Does the publication state source of the text from which data were mined? (ex: emergency department summary, operative notes, etc)\n","Enter the source of text: ","text_mine_source")):					
+					if (self.ask_without_choices("Does the publication state source of the text from which data were mined? (ex: emergency department summary, operative notes, etc)\n","Enter the source of text: ","text_mine_source")):
 						if (re.search(r'appendix',each_sent,re.I)):
 							if (self.check_boolean("Manuscript shares a pre-processed sample text source in",9,"appendix",each_sent,"nlp_source_shared_loc")):
 								self.assign("text_mining_preprocess",1)
@@ -346,8 +360,8 @@ class ArticleExtractor(ArticleManager):
 					self.check("Analysis Software Version",search.group(1),search.group(1),each_sent,"analysis_sw_version")
 				self.check_operating_system(each_sent)
 				return
-		self.entry['software_analysis_code'] = 0	
-		
+		self.entry['software_analysis_code'] = 0
+
 	def check_standards(self,text):
 		stands = ["STATA","SAS","SPSS"]
 		for each_sent in nltk.sent_tokenize(text):
