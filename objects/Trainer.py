@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from Article import RawArticle
-from Query import Query
+from Redcap import Redcap
 import json
 import nltk
 from pprint import pprint
@@ -12,39 +12,51 @@ import re
 
 
 class Trainer(object):
-	def __init__(self,redcap,articles,searchwords):
+	def __init__(self,redcap,articles,searchwords=[]):
 		self.articles = articles
-		self.allwords = searchwords
-		self.train(redcap)
-		
+		ml_data = Redcap().get_ml_data(redcap)
+		if (not searchwords):
+			self.allwords = self.get_allwords()
+		else:
+			self.allwords = searchwords
+		self.train(redcap,ml_data)
 
-	def train(self,redcap):
+	def get_allwords(self):
+		allwords = []
+		for each_article in self.articles:
+			art = RawArticle("articles/{}".format(each_article))
+			try:
+				allwords.extend([word for word in nltk.word_tokenize(art.text) if word not in nltk.corpus.stopwords.words('english')])
+			except TypeError as e:
+				#article not found
+				pass
+		allwords = list(set(allwords))
+		return allwords
+
+	def train(self,redcap,ml_data):
 		print("training")
 		pubmed = json.loads(open("pubmed.json").read())
-		ml_data = Query().get_ml_data(redcap)
-		#pprint(ml_data)		#print records and their corresponding ml values (0 or 1)
 		train = []
 		featuresset = []
 
+
 		for each_article in self.articles:
-			art = RawArticle(each_article)
+			art = RawArticle("articles/{}".format(each_article))
+			numwords = len(self.allwords)
+			useword = sorted(self.allwords,key=self.allwords.count,reverse=True)[int(numwords/1.5)]
 			try:
-				#tup = (list(nltk.word_tokenize(art.text.lower())),ml_data[str(pubmed[each_article]['record'])]=='1')
-				#train.append(tup)
-				featuresset.append(({word: 1 if re.search(word,art.text.lower()) else 0 for word in self.allwords},ml_data[str(pubmed[each_article]['record'])]=='1'))
+				featuresset.append(({word: 1 if re.search(re.escape(word),art.text) else 0 for word in self.allwords},ml_data[str(pubmed[each_article]['record'])]=='1'))
 			except KeyError:
 				print("couldnt find article with record_id: {0}".format(each_article))
 
 		acc = []
-		for i in range(1000):
+		for i in range(100):
+			if (i%50 == 0):
+				print(i)
 			random.shuffle(featuresset)
 			trainset = featuresset[:-7]
 			testset = featuresset[-7:]
 			classifier = nltk.NaiveBayesClassifier.train(trainset)
 			acc.append(nltk.classify.accuracy(classifier,testset))
 			#classifier.show_most_informative_features(10)
-
 		print(sum(acc)/len(acc))
-
-
-		
