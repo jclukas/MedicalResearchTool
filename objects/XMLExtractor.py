@@ -56,9 +56,10 @@ class XMLExtractor(object):
 				return 0
 			return data
 		except Exception as e:
+			with open("error.log",'a') as f:
+				f.write("\txml_load call by XMLExtractor: {}\n".format(e))
 			print("request to site: '{}'\nfailed. error information from requests:".format(site))
 			print("\t",e)
-			raise
 			return 0
 
 	def parse_xml(self,xml : 'string - xml formatted string') -> 'bs4.BeautifulSoup':
@@ -92,6 +93,8 @@ class XMLExtractor(object):
 		try:
 			data = BeautifulSoup(xml,'lxml')
 		except Exception as e:
+			with open("error.log",'a') as f:
+				f.write("\tparse_xml call by XMLExtractor: {}\n\t\t{}\n".format(e,xml))
 			print("xml parse failed\nerror information from BeautifulSoup: \n\t{}".format(e))
 			return 0
 		return data
@@ -124,7 +127,7 @@ class XMLExtractor(object):
 		type of arg is: <class 'str'> but should be a <class 'bs4.BeautifulSoup'>
 		{}
 		"""
-		
+
 		if (not bs):
 			#likely, xml download failed because invalid url or misformatted data (user has already been notified in xml_load or parse_xml method calls)
 			#return empty dictionary so that redcap entry doesnt throw errors
@@ -132,6 +135,8 @@ class XMLExtractor(object):
 		if (not isinstance(bs,type(BeautifulSoup("",'lxml')))):
 			#verify xml is a beautiful soup object
 			print("xml_extract called on invalid argument: '{}'\ntype of arg is: {} but should be a {}".format(bs,type(bs),type(BeautifulSoup("",'lxml'))))
+			with open("error.log",'a') as f:
+				f.write("\tinvalid xml_extract call by XMLExtractor\n")
 			#return empty dictionary so that redcap entry doesnt throw errors
 			return {}
 
