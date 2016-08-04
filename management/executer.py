@@ -6,7 +6,7 @@ sys.path.append("{0}/Desktop/cbmi/reproduce/python/MedicalResearchTool/objects".
 sys.path.append("{0}/Desktop/cbmi/reproduce/python/MedicalResearchTool".format(os.environ['HOME']))
 
 from getopt import getopt
-from Article import PMCArticle, ClosedArticle
+from Article import XMLArticle, PDFArticle
 from ArticleManager import ArticleManager
 from Trainer import Trainer
 import nltk
@@ -22,7 +22,6 @@ from bs4 import BeautifulSoup
 
 ncbi_site = "https://www.ncbi.nlm.nih.gov/"
 xml_tag = "?report=xml&format=text"
-pmc_tag = "utils/oa/oa.fcgi?id="
 
 def get_command_args(argv):
 	firstarticles = ["24433938","26513432","23632207","25266841","25203000","26236002","24119466",
@@ -36,17 +35,22 @@ def get_command_args(argv):
 	#23355463 is not open acces
 	#for debugging
 
-	articles = firstarticles #+ secondarticles
+	articles = []
+	#articles = firstarticles #+ secondarticles
 	#articles = xmltests
 
 	identifier = "pmid"
 	indi = xml = pdf = redcap = down = train = zxml = 0
-	opts, args = getopt(argv,"a:bdi:xprtz",["articles=","by-itself","download","identifier=","xml","pdf","redcap","train","zxml"])
+	opts, args = getopt(argv,"a:bdf:i:xprtz:",["articles=","by-itself","download","file=","identifier=","xml","pdf","redcap","train","zxml="])
 	for opt,arg in opts:
 		if opt in ("-a","--articles"):
-			articles = arg.split(',')
+			articles.extend(arg.split(','))
 		elif opt in ("-b","--by-itself"):
 			indi = 1
+		elif opt in ("-f","--file"):
+			with open(arg,'rb') as f:
+				text = f.read().decode()
+				articles.extend(re.sub(r'[^\w/\.]+',' ',text).split())
 		elif opt in ("-i","--identifier"):
 			identifier = arg
 		elif opt in ("-x","--xml"):
@@ -60,7 +64,7 @@ def get_command_args(argv):
 		elif opt in ("-t","--train"):
 			train = 1
 		elif opt in ("-z","--zxml"):
-			zxml = 1
+			zxml = arg
 	return ({
 		'indi':indi,
 		'ident':identifier,
@@ -72,34 +76,12 @@ def get_command_args(argv):
 		'zxml':zxml
 		}, articles)
 
-def side_project(article):
-	xml = ArticleExtractor().xml_load("http://www.ncbi.nlm.nih.gov/pubmed/{0}?report=xml&format=text".format(article))
-	ids = xml['PubmedArticle']['PubmedData']['ArticleIdList']['ArticleId']
-	try:
-		for each_id in ids:
-			if (each_id['@IdType'] == "pmc"):
-				pmc = each_id['#text']
-	except TypeError:
-		if (ids['@IdType'] == "pmc"):
-			pmc = ids['#text']
-	try:
-		print("{0} , {1}".format(pmc,article))
-	except UnboundLocalError:
-		#no pmc value
-		pass
-
-
-
 def main(argv):
 	opts, articles = get_command_args(argv)
 	metadata = Query().get_metadata()
 
-
-
-
 	if (opts['train']):
-		
-		#define which to train
+
 		#TODO, could add option to -t argument, which redcaps
 		#meta_analysis = Trainer("meta_analysis",articles)
 		#meta_analysis.pickle()
@@ -108,49 +90,27 @@ def main(argv):
 
 		searchwords = ['statistical','analysis','standard','deviation','sd','chi-squared','test','significance','t-test','Poisson',
 						'regression','model','data','intercepts','hazard','odds','ratio','Cox','normally','distributed','multivariate']
-		analysis_processes_clear = Trainer("analysis_processes_clear",articles,searchwords)
-
+		#analysis_processes_clear = Trainer("analysis_processes_clear",articles)
+		#primary_research = Trainer("primary_research",articles)
 		return
 
 	for each_article in articles:
 		print(each_article)
 
-	
 		if (opts['zxml']):
 			try:
-				art = PMCArticle(ArticleManager().read_xml('articles/sub_pmc_result.xml',opts['ident'],each_article),opts['indi'],metadata)
+				#opts['zxml'] is the xml file
+				art = XMLArticle(ArticleManager().read_xml(opts['zxml'],opts['ident'],each_article),opts['indi'],each_article,opts['ident'],metadata=metadata)
 			except TypeError as e:
 				#article not found or not open access
 				print("{} not found".format(each_article))
 				continue
-
-		############side projects#################
-		#xml = ArticleExtractor().xml_load("https://www.ncbi.nlm.nih.gov/pmc/oai/oai.cgi?verb=GetRecord&identifier=oai:pubmedcentral.nih.gov:{0}&metadataPrefix=pmc".format(re.sub(r'pmc','',each_article)))
-		#xml = ArticleExtractor().xml_load("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id={0}".format(re.sub(r'pmc','',each_article)))
-		#continue
-
-		
-		#side_project(each_article)
-		#continue
-
-		#r = requests.get("http://www.ncbi.nlm.nih.gov/pmc/articles/{0}/?report=reader".format(each_article))
-		#proc = subprocess.Popen(["curl","-s","-o /dev/null",'-w "%{http_code}"',"http://www.ncbi.nlm.nih.gov/pmc/articles/{0}/?report=reader".format(each_article)],stdout=subprocess.PIPE)
-		
-		#proc = subprocess.Popen(["curl","-s",'-w "%{http_code}"',"http://www.ncbi.nlm.nih.gov/pmc/articles/{0}/?report=reader".format(each_article)],stdout=subprocess.PIPE)
-		"""
-		code = proc.communicate()[0]
-		code = code.strip()
-		code = code.strip(b'"')
-		print(code == b"403")
-		print("\n")
-		continue
-		"""
-		###############side projects###############
-
-
-
-		art = ClosedArticle(each_article,opts['indi'],metadata)
-		#art = PMCArticle(each_article,opts['indi'],metadata)
+		else:
+			try:
+				art = PDFArticle("articles/{}".format(each_article),opts['indi'],each_article,'pmid',metadata=metadata)
+			except TypeError as e:
+				print("{} not found".format(each_article))
+				continue
 
 		if (opts['xml']):
 			xe = XMLExtractor()
@@ -187,15 +147,16 @@ def main(argv):
 			art.get_stats()
 
 			art.get_limitations()
-		
+
 		art.entry = art.clean_entry()
 		pprint(art.entry)
-		
+
 		if (opts['redcap']):
-			art.enter_redcap(art.entry,14)
+			art.enter_redcap(art.entry,14,article_id=art.article_id,identifier=art.identifier)
 			print(str(art.redcap_return))
 
 		print("\n\n\n\n")
+
 
 if __name__ == "__main__":
 	main(sys.argv[1:])
