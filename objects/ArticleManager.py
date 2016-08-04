@@ -10,71 +10,66 @@ sys.path.append("{0}/Desktop/cbmi/reproduce/python/MedicalResearchTool".format(o
 import pycurl, io, json
 from pprint import pprint
 from bs4 import BeautifulSoup
-from Query import Query
+from Redcap import Redcap
 
-class ArticleManager(object):
+class ArticleManager(Redcap):
 
-	def __init__(self,metadata=Query().get_metadata()):
-		self.indi = 0
-		self.verify_meta(metadata)
-		self.metadata = metadata
+	def __init__(self,metadata=Redcap().get_metadata(),run_style=0):
+		self.indi = run_style
+		self.metadata = self.verify_meta(metadata)
 
-	def verify_meta(self,metadata):
+	def verify_meta(self,metadata : 'list of dictionaries'):
+		"""
+		Affirm that metadata follows the proper format
+			a metadata is:
+				a list of dictionaries
+				and each dictionary must have (minimum) keys:
+					field_name
+					field_type
+					select_choices_or_calculations
+		Args: proposed metadata
+		Returns: metadata (if no errors occurred), (returns the parameter, unaltered)
+
+		Example:
+		>>> am = ArticleManager()
+		>>> am.verify_meta([{'field_type': 'radio','field_name': 'hypothesis_gen_or_driv','select_choices_or_calculations': ''},{'field_type': 'checkbox','field_name': 'data_analysis_doc_loc','select_choices_or_calculations': '1, Dataset Metadata | 2, Supplementary Materials | 3, Appendix | 4, Body of Text'}])
+		[{'field_name': 'hypothesis_gen_or_driv', 'field_type': 'radio', 'select_choices_or_calculations': ''},
+		{'field_name': 'data_analysis_doc_loc', 'field_type': 'checkbox', 'select_choices_or_calculations': '1, Dataset Metadata | 2, Supplementary Materials | 3, Appendix | 4, Body of Text'}]
+
+		Raise error if metadata doesnt follow proper format
+		>>> am.verify_meta("red hot chili peppers")
+		Traceback (most recent call last):
+		  File "<stdin>", line 1, in <module>
+		  File "/Users/christian/Desktop/cbmi/reproduce/python/MedicalResearchTool/objects/ArticleManager.py", line 42, in verify_meta
+		    raise TypeError("metadata must be type 'list' but is type: {0} \nmetadata: {1} \nexample metadata: {2}".format(type(metadata),metadata,example))
+		TypeError: metadata must be type 'list' but is type: <class 'str'>
+		metadata: red hot chili peppers
+		example metadata: [{'select_choices_or_calculations': '', 'field_type': 'text', 'field_label': 'Record ID', 'field_name': 'record_id'},
+		{'select_choices_or_calculations': '1, Hypothesis Driven | 2, Hypothesis Generating | 3, Unclear', 'field_type': 'radio',
+		'branching_logic': '', 'field_label': 'Is the research hypothesis-driven or hypothesis-generating?', 'field_name': 'hypothesis_gen_or_driv'}]
+
+		>>> am.verify_meta([{"field_name":'outfield'},{"field_name":'player'}])
+		Traceback (most recent call last):
+		  File "<stdin>", line 1, in <module>
+		  File "/Users/christian/Desktop/cbmi/reproduce/python/MedicalResearchTool/objects/ArticleManager.py", line 65, in verify_meta
+		    raise KeyError("each list-item in metadata must contain at least the keys: 1) 'field_name', 2) 'field_type', 3) 'select_choices_or_calculations' .\nitem: {}\nexample metadata: {}".format(item,example))
+		KeyError: "each list-item in metadata must contain at least the keys: 1) 'field_name', 2) 'field_type', 3) 'select_choices_or_calculations' .
+		item: {'field_name': 'outfield'}
+		example metadata: [{'select_choices_or_calculations': '', 'field_type': 'text', 'field_label': 'Record ID', 'field_name': 'record_id'},
+		{'select_choices_or_calculations': '1, Hypothesis Driven | 2, Hypothesis Generating | 3, Unclear', 'field_type': 'radio',
+		'branching_logic': '', 'field_label': 'Is the research hypothesis-driven or hypothesis-generating?', 'field_name': 'hypothesis_gen_or_driv'}]"
+		"""
 		example = """[{'select_choices_or_calculations': '', 'field_type': 'text', 'field_label': 'Record ID', 'field_name': 'record_id'},
-{'select_choices_or_calculations': '1, Hypothesis Driven | 2, Hypothesis Generating | 3, Unclear', 'field_type': 'radio', 'branching_logic': '', 'field_label': 'Is the research hypothesis-driven or hypothesis-generating?', 'field_name': 'hypothesis_gen_or_driv'}"""
+{'select_choices_or_calculations': '1, Hypothesis Driven | 2, Hypothesis Generating | 3, Unclear', 'field_type': 'radio',
+'branching_logic': '', 'field_label': 'Is the research hypothesis-driven or hypothesis-generating?', 'field_name': 'hypothesis_gen_or_driv'}]"""
 		if (type(metadata) is not list):
-			raise TypeError("metadata must be type 'list' but is type: {0} \n\nmetadata: {1} \nexample metadata: {2}".format(type(metadata),metadata,example))
+			raise TypeError("metadata must be type 'list' but is type: {} \n\nmetadata: {} \nexample metadata: {}".format(type(metadata),metadata,example))
 		for item in metadata:
 			if (type(item) is not dict):
-				raise TypeError("each list-item of metadata must be a dict but item: {} is type: {}\nexample metadata: {}".format(item,type(item),example))
-			try:
-				item['field_name']
-				item['field_type']
-				item['select_choices_or_calculations']
-			except KeyError as e:
-				raise KeyError("""each list-item in metadata must contain at least the keys: 1) 'field_name', 2) 'field_type', 3) 'select_choices_or_calculations' 
-									.\nitem: {}\nexample metadata: {}""".format(item,example))
-
-	#could do
-	#def enter_redcap(self,entry,**kwargs)
-	#so can only overwrite record_id if user provides record_id
-	def enter_redcap(self,entry,record_id=0):
-		#entry['record_id'] = record_id			#leave out for now so I dont destroy redcap...
-		entry['record_id'] = '9b7057f5f8894c9c'
-
-		from config import config
-		buf = io.BytesIO()
-		data = json.dumps([entry])
-		fields = {
-		    'token': config['api_token'],
-		    'content': 'record',
-		    'format': 'json',
-		    'type': 'flat',
-		    'data': data,
-		}
-
-		ch = pycurl.Curl()
-		ch.setopt(ch.URL, config['api_url'])
-		ch.setopt(ch.HTTPPOST, list(fields.items()))
-		ch.setopt(ch.WRITEFUNCTION, buf.write)
-		ch.perform()
-		ch.close()
-
-		self.redcap_return = buf.getvalue()
-		buf.close()
-		if (re.search(b'error',self.redcap_return)):
-			splitreturn = self.redcap_return.split(b'\\"')
-			fail_field = splitreturn[3].decode()
-			fail_reason = splitreturn[7].decode()
-			print("redcap entry failed on field: '{}'' \nbecause: '{}'".format(fail_field,fail_reason))
-			if (self.ask_question("Would you like to edit field: '{}'".format(fail_field))):
-				entry[fail_field] = self.ask("What is the value of {}?".format(fail_field),fail_field)
-				return self.enter_redcap(entry,record_id)
-			else:
-				print("retrying entry without that field")
-				del entry[fail_field]
-				return self.enter_redcap(entry,record_id)
-		return self.redcap_return
+				raise TypeError("each list-item of metadata must be a dict but item: {} is type: {} \nexample metadata: {}".format(item,type(item),example))
+			if ('field_name' not in item or 'field_type' not in item or 'select_choices_or_calculations' not in item):
+				raise KeyError("each list-item in metadata must contain at least the keys: 1) 'field_name', 2) 'field_type', 3) 'select_choices_or_calculations' .\nitem: {}\nexample metadata: {}".format(item,example))
+		return metadata
 
 	def ask(self,question,redcap):
 		if (self.indi == 1):
@@ -116,25 +111,11 @@ class ArticleManager(object):
 		v = IntVar()
 		v.set(1)
 		root.title("Chooser GUI")
-		#scrollbar = Scrollbar(root)
-		#crollbar.pack(side=RIGHT,fill=Y)
-
-		#mylist = Listbox(root, yscrollcommand=scrollbar.set )
-
-		#menu = Menu(root)
-		#root.config(menu=menu)
 		Message(root, text=variable).pack(fill=X)
 		Button(root, text='OK', width=25, command=root.destroy).pack()
 		for choice in choices:
-			#mylist.insert(END, Radiobutton(root,text=choice,padx=30,variable=v,value=choices[choice]).pack())
-			#menu.add_command(label="test**",command=)
 			Radiobutton(root,text=choice,padx=30,variable=v,value=choices[choice]).pack()
-		#mylist.insert(Radiobutton(root,text="None of the options",padx=30,variable=v,value=-1).pack())
 		Radiobutton(root,text="None of the options",padx=30,variable=v,value=-1).pack()
-		#menu.pack()
-
-		#mylist.pack( side = LEFT, fill = BOTH )
-		#scrollbar.config( command = mylist.yview )
 		root.mainloop()
 		self.user_choice = v.get()
 
@@ -175,13 +156,17 @@ class ArticleManager(object):
 				overwrite_val.strip()
 				self.assign(redcap,overwrite_val)
 				print("\n\n")
-				return
-			self.generate_chooser(variable,info,choices)
-			self.assign(redcap,self.user_choice)
+			else:
+				self.generate_chooser(variable,info,choices)
+			with open("record.log",'a') as f:
+				f.write("\t\t{}\n".format(self.user_choice))
+			return self.assign(redcap,self.user_choice)
 		else:
 			return
 
 	def check_boolean(self,variable,value,display,info,redcap):
+		with open("record.log",'a') as f:
+			f.write("\t{}\n\t\t{}\n".format(variable,display))
 		if (self.indi):
 			self.assign(redcap,value)
 			return 1
@@ -202,7 +187,6 @@ class ArticleManager(object):
 		with open(file,'r') as x:
 			bs = BeautifulSoup(x.read(),"lxml")
 
-		#TODO, make more efficient
 		for ass in bs.find_all("article"):
 			#if (ass.find('article-id',{'pub-id-type':'pmc'}).text == '3592787'):
 			if (ass.find('article-id',{'pub-id-type':identifier}).text == search_id):
@@ -212,4 +196,41 @@ class ArticleManager(object):
 				#found open access article
 				return str(ass)
 		return -1		#article not found
-				
+
+	def download_pdf(self):
+		"""
+		if (not os.path.isdir("articles/")):
+			os.makedirs("articles/")
+
+		ids = self.xml['PubmedArticle']['PubmedData']['ArticleIdList']['ArticleId']
+		for each_id in ids:
+			if (each_id['@IdType'] == "pmc"):
+				pmc = each_id['#text']
+
+		xml = self.xml_load(ncbi_site + "pmc/" + pmc_tag + pmc)
+		links = xml['OA']['records']['record']['link']
+		for link in links:
+			print(link)
+			if (link['@format'] == 'pdf'):
+				href = link['@href']
+		print(href)
+		bashCommand = "wget " + href
+		subprocess.run(bashCommand.split())
+
+		bashCommand = "mv " + href.split('/')[-1] + " " + self.pubmed_code + ".pdf"
+		subprocess.run(bashCommand.split())
+		"""
+		return
+
+	def record_data(self,entrylog):
+		return #TODO
+		conn = sqlite3.connect('errors.db')
+		c = conn.cursor()
+		c.execute("CREATE TABLE IF NOT EXISTS errortable(article_id TEXT, identifier TEXT, record_id TEXT, field TEXT, machine_value TEXT, human_value TEXT, altered INTEGER, run_style INTEGER, datetimestamp TEXT)")
+
+		entry = {"article_id":'','identifier':'','record_id':'','method':'','object':'','field':'','value':'','notes':'','time':strftime("%Y-%m-%d %H:%M:%S",localtime())}
+		entry.update(errorlog)
+		c.execute("INSERT INTO errortable VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)", (entry['article_id'],entry['identifier'],entry['record_id'],entry['method'],entry['object'],entry['field'],entry['value'],entry['notes'],entry['time']))
+		conn.commit()
+		c.close()
+		conn.close()
