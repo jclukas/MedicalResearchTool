@@ -1,5 +1,6 @@
 #ignore pycache and DS store files
 */__pycache__/*
 */.DS_Store
+.DS_Store
 config.py
 errors.db
