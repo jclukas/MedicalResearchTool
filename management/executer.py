@@ -10,7 +10,7 @@ from Article import XMLArticle, PDFArticle
 from ArticleManager import ArticleManager
 from Trainer import Trainer
 import nltk
-from Query import Query
+from DatabaseManager import DatabaseManager
 from pprint import pprint
 from ArticleExtractor import ArticleExtractor
 from XMLExtractor import XMLExtractor
@@ -34,6 +34,7 @@ def get_command_args(argv):
 	#24433938 is from firstarticles, doesnt exist in xml
 	#23355463 is not open acces
 	#for debugging
+	#"26775158,26815253,26825406,26824374,26803428,26795617,26784271,26783357,26783356,26781389"
 
 	articles = []
 	#articles = firstarticles #+ secondarticles
@@ -41,7 +42,7 @@ def get_command_args(argv):
 
 	identifier = "pmid"
 	indi = xml = pdf = redcap = down = train = zxml = 0
-	opts, args = getopt(argv,"a:bdf:i:xprtz:",["articles=","by-itself","download","file=","identifier=","xml","pdf","redcap","train","zxml="])
+	opts, args = getopt(argv,"a:bdf:i:xprt:z:",["articles=","by-itself","download","file=","identifier=","xml","pdf","redcap","train=","zxml="])
 	for opt,arg in opts:
 		if opt in ("-a","--articles"):
 			articles.extend(arg.split(','))
@@ -62,7 +63,7 @@ def get_command_args(argv):
 		elif opt in ("-d","--download"):
 			down = 1
 		elif opt in ("-t","--train"):
-			train = 1
+			train = arg
 		elif opt in ("-z","--zxml"):
 			zxml = arg
 	return ({
@@ -78,37 +79,40 @@ def get_command_args(argv):
 
 def main(argv):
 	opts, articles = get_command_args(argv)
-	metadata = Query().get_metadata()
+	metadata = DatabaseManager().get_metadata()
 
 	if (opts['train']):
 
-		#TODO, could add option to -t argument, which redcaps
 		#meta_analysis = Trainer("meta_analysis",articles)
 		#meta_analysis.pickle()
 
 		#primary_research = Trainer("primary_research",articles)
 
+		for field in opts['train'].split(','):
+			tr = Trainer(field.strip(),articles)
 		searchwords = ['statistical','analysis','standard','deviation','sd','chi-squared','test','significance','t-test','Poisson',
 						'regression','model','data','intercepts','hazard','odds','ratio','Cox','normally','distributed','multivariate']
-		#analysis_processes_clear = Trainer("analysis_processes_clear",articles)
-		#primary_research = Trainer("primary_research",articles)
 		return
 
 	for each_article in articles:
 		print(each_article)
+		os.environ['article_id'] = each_article
+		os.environ['identifier'] = opts['ident']
 
 		if (opts['zxml']):
 			try:
 				#opts['zxml'] is the xml file
 				art = XMLArticle(ArticleManager().read_xml(opts['zxml'],opts['ident'],each_article),opts['indi'],each_article,opts['ident'],metadata=metadata)
+				#instantiation is redundant but allows ArticleManager to be used without XMLArticle
 			except TypeError as e:
 				#article not found or not open access
 				print("{} not found".format(each_article))
 				continue
 		else:
 			try:
-				art = PDFArticle("articles/{}".format(each_article),opts['indi'],each_article,'pmid',metadata=metadata)
+				art = PDFArticle("articles/{}".format(each_article),each_article,'pmid',run_style=opts['indi'],metadata=metadata)
 			except TypeError as e:
+				raise
 				print("{} not found".format(each_article))
 				continue
 
@@ -152,10 +156,13 @@ def main(argv):
 		pprint(art.entry)
 
 		if (opts['redcap']):
-			art.enter_redcap(art.entry,14,article_id=art.article_id,identifier=art.identifier)
+			art.enter_redcap(art.entry,14)
 			print(str(art.redcap_return))
 
 		print("\n\n\n\n")
+
+	del os.environ['article_id']
+	del os.environ['identifier']
 
 
 if __name__ == "__main__":
