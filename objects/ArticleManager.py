@@ -10,13 +10,14 @@ sys.path.append("{0}/Desktop/cbmi/reproduce/python/MedicalResearchTool".format(o
 import pycurl, io, json
 from pprint import pprint
 from bs4 import BeautifulSoup
-from Redcap import Redcap
+from DatabaseManager import DatabaseManager
 
-class ArticleManager(Redcap):
+class ArticleManager(DatabaseManager):
 
-	def __init__(self,metadata=Redcap().get_metadata(),run_style=0):
+	def __init__(self,metadata=DatabaseManager().get_metadata(),run_style=1):
 		self.indi = run_style
 		self.metadata = self.verify_meta(metadata)
+		self.entry = {}
 
 	def verify_meta(self,metadata : 'list of dictionaries'):
 		"""
@@ -83,13 +84,14 @@ class ArticleManager(Redcap):
 			return 1
 		return 0
 
-	def ask_without_choices(self,question,entry,redcap):
+	def ask_without_choices(self,question,prompt,redcap):
 		if (self.indi == 1):
 			return 0
 		if (self.ask_question(question)):
-			value = input(entry)
+			self.user_choice = input(prompt)
+			print(self.user_choice)
 			print("\n\n")
-			self.assign(redcap,value)
+			self.assign(redcap,self.user_choice)
 			return 1
 		return 0
 
@@ -141,9 +143,8 @@ class ArticleManager(Redcap):
 		if (redcap in self.entry):
 			self.entry[redcap] += "," + value
 			return self.entry[redcap]
-		else:
-			self.entry[redcap] = value
-			return value
+		self.entry[redcap] = value
+		return value
 
 	def check(self,variable,value,display,info,redcap):
 		correct = self.check_boolean(variable,value,display,info,redcap)
@@ -184,6 +185,7 @@ class ArticleManager(Redcap):
 			return 1
 
 	def read_xml(self,file,identifier,search_id):
+		search_id = str(search_id)
 		with open(file,'r') as x:
 			bs = BeautifulSoup(x.read(),"lxml")
 
@@ -221,6 +223,76 @@ class ArticleManager(Redcap):
 		subprocess.run(bashCommand.split())
 		"""
 		return
+
+	def enter_redcap(self,entry : 'dictionary', record_id, **kwargs):
+		"""
+		Enter entry into redcap
+		Args: redcap entry (dictionary where keys are redcap codebook keys)
+		KeywordArgs: record_id (string or int), default to next available record_id autoincrememnt
+		Return: dictionary detailing:
+			how many entrie were edited if upload was successful
+			what caused the error and why if upload was unsuccessful
+
+		Example:
+		>>> am = ArticleManager()
+		>>> am.enter_redcap({"author_fn":"kurt","author_ln":"vonnegut"},40)
+		{'status': 'success', 'count': 1}
+		>>> am.enter_redcap({"author_fn":"george","author_ln":"lucas"})
+		{'status': 'success', 'count': 1}
+		#TODO, left off on error management
+
+
+
+		"""
+		#entry['record_id'] = record_id			#leave out for now so I dont destroy redcap...
+		entry['record_id'] = '9b7057f5f8894c9c'
+
+		#see redcap api documentation -- https://redcap.wustl.edu/redcap/srvrs/prod_v3_1_0_001/redcap/api/help/
+		from config import config
+		buf = io.BytesIO()
+		data = json.dumps([entry])
+		fields = {
+		    'token': config['api_token'],
+		    'content': 'record',
+		    'format': 'json',
+		    'type': 'flat',
+		    'data': data,
+		}
+
+		ch = pycurl.Curl()
+		ch.setopt(ch.URL, config['api_url'])
+		ch.setopt(ch.HTTPPOST, list(fields.items()))
+		ch.setopt(ch.WRITEFUNCTION, buf.write)
+		ch.perform()
+		ch.close()
+
+		redcap_return = buf.getvalue()
+		buf.close()
+		if (re.search(b'error',redcap_return)):
+			splitreturn = list(map(bytes.decode,redcap_return.split(b'\\"')))
+			fails = {"status":"error","record_id":splitreturn[1],"redcap_field":splitreturn[3],"value":splitreturn[5],"reason":splitreturn[7]}
+			print("redcap entry failed on field: '{}'\nbecause: '{}'".format(fails['redcap_field'],fails['reason']))
+
+			self.record_error(method='enter_redcap',object_caller='`DatabaseManager`',record_id=splitreturn[1],field=splitreturn[3],value=splitreturn[5],notes=splitreturn[7])
+
+			#note if it was resolved
+			if (self.ask("Would you like to edit field: '{}'".format(fails['redcap_field']),fails['redcap_field'])):
+				entry[fails['redcap_field']] = self.user_choice
+				return self.enter_redcap(entry,record_id)
+			elif (self.ask_question("Would you like to abandon entry?")):
+				self.redcap_return = fails
+				return self.redcap_return
+			else:
+				print("retrying entry without that field")
+				del entry[fails['redcap_field']]
+				del entry['record_id'] 			#so that entry is empty if no other fields
+				if (not entry):
+					#entry is empty, no fields left to attempt to upload to redcap
+					self.redcap_return = {"status":"fail","count":0}
+					return self.redcap_return
+				return self.enter_redcap(entry,record_id)
+		self.redcap_return = {"status":"success","count":1}
+		return self.redcap_return
 
 	def record_data(self,entrylog):
 		return #TODO
