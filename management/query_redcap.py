@@ -9,7 +9,7 @@ sys.path.append("{0}/Desktop/cbmi/reproduce/python/MedicalResearchTool".format(o
 import pycurl, hashlib, json, nltk
 import requests
 from pprint import pprint
-from Query import Query
+from DatabaseManager import DatabaseManager
 
 
 def get_command_args(argv):
@@ -43,17 +43,17 @@ def get_command_args(argv):
 
 def main(argv):
 	opts = get_command_args(argv)
-	qu = Query()
+	dm = DatabaseManager()
 
 	if (opts['data']):
-		pprint(qu.get_data(opts['redcap']))
+		pprint(dm.get_data(opts['redcap']))
 	if (opts['match']):
-		pprint(qu.get_matches(opts['redcap'],opts['bool'],opts['value']))
+		pprint(dm.get_matches(opts['redcap'],opts['bool'],opts['value']))
 	if (opts['search']):
-		pprint(qu.get_searches(opts['redcap'],opts['bool'],opts['value']))
+		pprint(dm.get_searches(opts['redcap'],opts['bool'],opts['value']))
 
 	if (opts['mach']):
-		qu.get_ml_data(opts['redcap'])
-	
+		dm.get_ml_data(opts['redcap'])
+
 if __name__ == "__main__":
 	main(sys.argv[1:])
