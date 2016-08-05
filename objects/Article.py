@@ -149,13 +149,11 @@ class XMLArticle(ArticleExtractor,XMLExtractor):
 		return self._get_institution(institution)
 
 class PDFArticle(ArticleExtractor,XMLExtractor):
-	def __init__(self,file,run_style,article_id,identifier,**metadata):
-		self.indi = run_style
+	#kwargs: metadata and run_style
+	#TODO, change if this works
+	def __init__(self,file,article_id,identifier,**kwargs):
 		self.entry = {}
-		if ('metadata' in metadata):
-			super(PDFArticle,self).__init__(run_style=run_style,metadata=metadata['metadata'])
-		else:
-			super(PDFArticle,self).__init__(run_style=run_style)
+		super(PDFArticle,self).__init__(**kwargs)
 		self.text = RawArticle(file).text
 		self.article_id = article_id
 		self.identifier = identifier
