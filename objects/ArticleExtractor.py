@@ -11,7 +11,7 @@ import xmltodict
 from pprint import pprint
 from stemming.porter2 import stem
 from ArticleManager import ArticleManager
-from Redcap import Redcap
+from DatabaseManager import DatabaseManager
 
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape, unescape
@@ -28,11 +28,8 @@ class ArticleExtractor(ArticleManager):
 	See ArticleManager for additional documentation
 	"""
 
-	def __init__(self,run_style=0,**metadata):
-		if ('metadata' in metadata):
-			super(ArticleExtractor,self).__init__(run_style=run_style,metadata=metadata['metadata'])
-		else:
-			super(ArticleExtractor,self).__init__(run_style=run_style)
+	def __init__(self,**kwargs):
+		super(ArticleExtractor,self).__init__(**kwargs)
 
 	def clean_entry(self):
 		"""
@@ -172,7 +169,7 @@ class ArticleExtractor(ArticleManager):
 		domains = self.get_choices("clinical_domain")
 		for word in key_words:
 			for domain in domains:
-				if (re.search(word,domain,re.I)):
+				if (re.search(re.escape(word),domain,re.I)):
 					return domain
 		return 0
 
@@ -326,6 +323,7 @@ class ArticleExtractor(ArticleManager):
 						return
 
 	def _get_analysis(self,text):
+		return #TODO, run machine learning algorithm
 		for each_sent in nltk.sent_tokenize(text):
 			if (re.search(r'statistical analys[ie]s',each_sent,re.I) or re.search(r'data analys[ie]s',each_sent,re.I)):
 				if (self.check_boolean("Publications States Analysis Methodology And Process",1,"yes",each_sent,"analysis_processes_clear")):
@@ -382,15 +380,16 @@ class ArticleExtractor(ArticleManager):
 						self.check("Analysis Software Version",search.group(1),search.group(1),each_sent,"analysis_sw_version")
 					self.entry['analysis_software_open___2'] = 1
 					search = re.search(r'\sR\s.*?(\d[\d\.]*\d)',each_sent)
-					self.ask_without_choices("Does the publication list the operating system used in analyses?","Type the operating system used: ","analysis_os")
+					#self.ask_without_choices("Does the publication list the operating system used in analyses?","Type the operating system used: ","analysis_os")
 
 	def check_operating_system(self,text):
-		if (re.search(r'windows',text,re.I)):
-			self.check_boolean("Operating System Used For Analyses",'Windows','Windows',text,"analysis_os")
-			if ("analysis_os" in self.entry):
-				return
-		if (self.ask_question("Do they cite what operating system they used?")):
-			self.ask("What operating system was used for analyses?","analysis_os")
+		for os in ['Windows','Mac','Linux','Unix']:
+			if (re.search(os,text,re.I)):
+				self.check_boolean("Operating System Used For Analyses",os,os,text,"analysis_os")
+				if ("analysis_os" in self.entry):
+					return
+		#if (self.ask_question("Do they cite what operating system they used?")):
+		#	self.ask("What operating system was used for analyses?","analysis_os")
 
 	def _get_limitations(self,text):
 		for each_sent in nltk.sent_tokenize(text):
