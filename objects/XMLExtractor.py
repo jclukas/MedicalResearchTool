@@ -4,8 +4,9 @@
 import os, sys, re
 import requests
 from bs4 import BeautifulSoup
+from DatabaseManager import DatabaseManager
 
-class XMLExtractor(object):
+class XMLExtractor(DatabaseManager):
 	"""
 	Load xml from ncbi site,
 	Parse xml using BeautifulSoup
@@ -46,21 +47,24 @@ class XMLExtractor(object):
 			 Invalid URL 'this is not a valid url': No schema supplied. Perhaps you meant http://this is not a valid url?
 		0
 		"""
+		xml_text = ''
 		try:
 			xml_text = requests.get(site).text
-			xml_text = re.sub(r'&lt;',"<",xml_text)
-			xml_text = re.sub(r'&gt;',">",xml_text)
-			data = self.parse_xml(xml_text)
-			if (not data):
-				print("xml could not be interpretted for site: {}".format(site))
-				return 0
-			return data
 		except Exception as e:
-			with open("error.log",'a') as f:
-				f.write("\txml_load call by XMLExtractor: {}\n".format(e))
+			print(type(e))
+			self.record_error(method='xml_load',object_caller='XMLExtractor',field=site,notes=e)
 			print("request to site: '{}'\nfailed. error information from requests:".format(site))
 			print("\t",e)
 			return 0
+		xml_text = re.sub(r'&lt;',"<",xml_text)
+		xml_text = re.sub(r'&gt;',">",xml_text)
+		data = self.parse_xml(xml_text)
+		if (not isinstance(data,BeautifulSoup)):
+			print("xml could not be interpretted for site: {}".format(site))
+			#in this case data is the error message from beautifulsoup
+			self.record_error(method='parse_xml',object_caller='XMLExtractor',field=site,notes=data)
+			return 0
+		return data
 
 	def parse_xml(self,xml : 'string - xml formatted string') -> 'bs4.BeautifulSoup':
 		"""
@@ -71,7 +75,7 @@ class XMLExtractor(object):
 
 		Example:
 		>>> xe = XMLExtractor()
-		>>> bs = xe.parse_xml("<ImportantInformation><BestDinosaur>triceratops</BestDinosaur><BestCountry>Ireland</BestCountry></ImportantInformation>",'lxml')
+		>>> bs = xe.parse_xml("<ImportantInformation><BestDinosaur>triceratops</BestDinosaur><BestCountry>Ireland</BestCountry></ImportantInformation>")
 		>>> bs
 		<html><body><importantinformation><bestdinosaur>triceratops</bestdinosaur><bestcountry>Ireland</bestcountry></importantinformation></body></html>
 		>>> bs.importantinformation
@@ -85,21 +89,20 @@ class XMLExtractor(object):
 		parse_xml called on: '12'
 		invalid type, arg must be type string but is: <class 'int'>
 
-		In theory, BeautifulSoup manages error handling... but I cant get it to throw an error so it's a still a mystery
+		BeautifulSoup will never throw an error as long as the argument is a string.
+		Check that pubmedarticle tag is in BeautifulSoup to verify that parse was successful
 		"""
 		if (type(xml) is not str):
 			print("parse_xml called on: '{}'\n invalid type, arg must be type string but is: {}".format(xml,type(xml)))
 			return 0
-		try:
-			data = BeautifulSoup(xml,'lxml')
-		except Exception as e:
-			with open("error.log",'a') as f:
-				f.write("\tparse_xml call by XMLExtractor: {}\n\t\t{}\n".format(e,xml))
-			print("xml parse failed\nerror information from BeautifulSoup: \n\t{}".format(e))
-			return 0
+		data = BeautifulSoup(xml,'lxml')
+		if (not data.pubmedarticle):
+			e = "xml was not proper format (no 'pubmedarticle' tag found). likely, the wrong website was entered"
+			print(e)
+			return e
 		return data
 
-	def xml_extract(self,bs : 'BeautifulSoup - xml data from ncbi site') -> 'dictionary':
+	def xml_extract(self,bs : 'BeautifulSoup - xml data from ncbi site'):
 		"""
 		Extract redcap fields from the BeautifulSoup object
 		Args: BeautifulSoup of xml from ncbi site
@@ -132,11 +135,10 @@ class XMLExtractor(object):
 			#likely, xml download failed because invalid url or misformatted data (user has already been notified in xml_load or parse_xml method calls)
 			#return empty dictionary so that redcap entry doesnt throw errors
 			return {}
-		if (not isinstance(bs,type(BeautifulSoup("",'lxml')))):
+		if (not isinstance(bs,BeautifulSoup)):
 			#verify xml is a beautiful soup object
-			print("xml_extract called on invalid argument: '{}'\ntype of arg is: {} but should be a {}".format(bs,type(bs),type(BeautifulSoup("",'lxml'))))
-			with open("error.log",'a') as f:
-				f.write("\tinvalid xml_extract call by XMLExtractor\n")
+			print("xml_extract called on invalid argument: '{}'\ntype of arg is: {} but should be a {}".format(bs,type(bs),type(BeautifulSoup())))
+			self.record_error(method='xml_extract',object_caller='XMLExtractor',value=bs,notes="xml_extract called on invalid argument: '{}'\ntype of arg is: {} but should be a {}".format(bs,type(bs),type(BeautifulSoup())))
 			#return empty dictionary so that redcap entry doesnt throw errors
 			return {}
 
@@ -186,7 +188,6 @@ class XMLExtractor(object):
 				search information
 		Return: data in form of string
 				empty string if nothing found
-
 		Example:
 		>>> xe = XMLExtractor()
 		>>> bs = BeautifulSoup("<ImportantInformation><BestDinosaur>triceratops</BestDinosaur><BestCountry>Ireland</BestCountry></ImportantInformation>",'lxml')
