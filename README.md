@@ -1,4 +1,4 @@
-# MedicalResearchTool
+# Research_Reproducibility Tool
 
 ##Authors:
 John Christian Lukas -- clukas812@gmail.com
