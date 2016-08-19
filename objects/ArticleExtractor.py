@@ -485,7 +485,6 @@ class ArticleExtractor(ArticleManager):
 							if (self.ask_question("Do they share a pre-processed sample of the text source?")):
 								self.assign("text_mining_preprocess",1)
 								self.ask("Where is the sample shared?","nlp_source_shared_loc")
-					#self.nlp_validation()		#TODO
 						if (self.ask_without_choices("Does the publication state software used for text mining?","Enter softwares used: ","nlp_software")):
 							self.ask("Is the software open or proprietary?","nlp_software_open")
 						return
