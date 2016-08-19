@@ -171,7 +171,7 @@ def extract(article):
 
 
 	if (opts['text']):
-		pdf_extract(article)
+		text_extract(article)
 
 	article.entry = article.clean_entry()
 	pprint(article.entry)
@@ -210,7 +210,7 @@ def xml_extract(article):
 		#xml extract failed during http request or parsing, user already notified
 		pass
 
-def pdf_extract(art):
+def text_extract(art):
 
 	art.get_reviewer()
 	art.get_hypotheses()
