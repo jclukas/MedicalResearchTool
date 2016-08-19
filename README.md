@@ -42,9 +42,10 @@ John Christian Lukas -- clukas812@gmail.com
 5. [ArticleExtractor](https://www.youtube.com/watch?v=sV7jGREY-GQ)
 6. [Article](https://www.youtube.com/watch?v=iPUkUB-8Hzc)
 7. [executer and query_redcap](https://www.youtube.com/watch?v=EznR-Sdf6Uc)
+All commands available in: otherthings/Commands text document
 
 ##Future Directions:
-* Expand to extract more fields (see fields_status.xlsx for information on currently supported fields and extraction methods for those fields); Steps:
+* Expand to extract more fields (see otherthings/fields_status.xlsx for information on currently supported fields and extraction methods for those fields); Steps:
   * In ArticleExtractor, define a new method:
   ```
   def _get_{field}(self,text):
